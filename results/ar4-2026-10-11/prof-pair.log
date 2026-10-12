@@ -8,8 +8,8 @@ profiled:
 {'prompt_tokens': 26, 'total_tokens': 186, 'completion_tokens': 160, 'prompt_tokens_details': None}
  stopped 03:23:07
 total 15472
-drwxrwxr-x 2 otnops otnops    4096 Oct 12 03:23 .
-drwxrwxr-x 7 otnops otnops    4096 Oct 12 02:57 ..
+drwxrwxr-x 2 user user    4096 Oct 12 03:23 .
+drwxrwxr-x 7 user user    4096 Oct 12 02:57 ..
 -rw-r--r-- 1 root   root      1046 Oct 12 03:23 monolith_1.async_llm.1791775381070117414.pt.trace.json.gz
 -rw-r--r-- 1 root   root     20654 Oct 12 03:23 profiler_out_0.txt
 -rw-r--r-- 1 root   root     20657 Oct 12 03:23 profiler_out_1.txt
@@ -57,8 +57,8 @@ profiled:
 {'prompt_tokens': 26, 'total_tokens': 186, 'completion_tokens': 160, 'prompt_tokens_details': None}
  stopped 03:31:40
 total 20032
-drwxrwxr-x 2 otnops otnops    4096 Oct 12 03:31 .
-drwxrwxr-x 7 otnops otnops    4096 Oct 12 02:57 ..
+drwxrwxr-x 2 user user    4096 Oct 12 03:31 .
+drwxrwxr-x 7 user user    4096 Oct 12 02:57 ..
 -rw-r--r-- 1 root   root      1048 Oct 12 03:31 monolith_1.async_llm.1791775891593499230.pt.trace.json.gz
 -rw-r--r-- 1 root   root     20651 Oct 12 03:31 profiler_out_0.txt
 -rw-r--r-- 1 root   root     20654 Oct 12 03:31 profiler_out_1.txt

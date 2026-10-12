@@ -52,7 +52,7 @@ path is unchanged and still bit-identical to RCCL.
 
 Decode step (single stream, 8-wide verify): one-shot 18.6 ms, RCCL 22.3 ms, one-shot in the slow
 state 28.4 ms. The slow state is the gfx1201 dispatch-gap behaviour of ROCm#6347 / legacy-rocm-build#6685
-(see `../../CLAUDE.md`); `GPU_MAX_HW_QUEUES=1` is now the default in `run_paroquant_ar4.sh`.
+(see the project work log); `GPU_MAX_HW_QUEUES=1` is now the default in `run_paroquant_ar4.sh`.
 
 Diagnostics left in `patch_ar_4rank.py`, all off by default: `RADIANCE_AR4_SHADOW=1` (eager serve: RCCL
 reference + cross-rank bit check on every call), `RADIANCE_AR4_MIN_KB`, `RADIANCE_AR4_SKIP_FILES=<regex>`

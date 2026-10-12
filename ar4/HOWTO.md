@@ -1,7 +1,7 @@
 # HOWTO: the 4-rank one-shot all-reduce for Radiance/vLLM on 4x Radeon AI PRO R9700
 
 This is the implementation and operations guide. The measurements and the story of how it was found
-are in `README.md` (this directory) and in `../../CLAUDE.md`.
+are in `README.md` (this directory).
 
 ## 1. What it is, in one paragraph
 
