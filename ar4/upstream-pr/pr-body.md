@@ -31,7 +31,7 @@ Why the cap: the push moves the message to three peers, so the one-shot wins bel
 - In situ: an eager TP=4 serve with `RADIANCE_AR4_SHADOW=1` over **38,500 calls**: 0 outside bf16 tolerance (max relative deviation from RCCL 1.2e-2, which is the summation-order difference), **0 cross-rank bit differences**. Outputs are coherent at temperature 0 and 0.7; DFlash acceptance is unchanged at ~3.6 tokens per step.
 - Profiler (torch, FULL graphs): per decode step the all-reduce kernels total 1.63 ms vs 4.65 ms for RCCL at the same 129 calls, with every other category unchanged.
 
-**Not run:** BetterBench paired A/B and the GSM8K gate on this stack. I'd rather you run your own gates than take mine.
+**Not run:** BetterBench paired A/B and the GSM8K gate on this stack. Please run your own gates before merging.
 
 ## The dispatch state, since it will confuse anyone benchmarking this
 
@@ -48,3 +48,7 @@ TP=4 GPUS=0,1,2,3 ./serve-mxfp4.sh
 ```
 
 Boot log should show `custom all-reduce INSTALLED (rank=N max=768KB ... nb=8..8)` on all four workers. `RADIANCE_STEP_TRACE=50` is a quick way to see which dispatch state a server landed in: single-stream `gpu_span` ≈ 18.5 ms is good, ≈ 28 ms is the slow state.
+
+## Full write-up and tooling
+
+Microbenchmarks, the profiler analysis scripts, the shadow-check serve, raw logs and a build/operations HOWTO are in https://github.com/brainchillz/r9700-tp4-allreduce.

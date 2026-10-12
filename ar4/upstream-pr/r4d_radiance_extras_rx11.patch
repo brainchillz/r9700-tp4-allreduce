@@ -479,11 +479,11 @@ index 0000000..2c64d6b
 +int r4d_ar_3rank_max_blocks(void) { return R4D_AR3_MAX_BLOCKS; }
 diff --git a/r4d_ar_oneshot_4rank_exact.hip b/r4d_ar_oneshot_4rank_exact.hip
 new file mode 100644
-index 0000000..3f8b352
+index 0000000..c853037
 --- /dev/null
 +++ b/r4d_ar_oneshot_4rank_exact.hip
 @@ -0,0 +1,189 @@
-+// r4d_ar_oneshot_4rank_exact.hip: r4d_ar_oneshot_4rank_exact -- multi-block one-shot P2P-BAR
++// r4d_ar_oneshot_4rank_exact.hip: r4d_ar_oneshot_4rank_exact: multi-block one-shot P2P-BAR
 +// all-reduce for EXACTLY FOUR ranks (four R9700 over PCIe, TP=4). Templated on the 2- and 3-rank
 +// kernels, which stay byte-identical; everything here is additive.
 +//
@@ -504,7 +504,7 @@ index 0000000..3f8b352
 +//    flags for this block reach the sequence number. Per-block device-resident seq counters and
 +//    the (seq & 1) double-buffer are unchanged; the reuse argument carries over per peer pair.
 +//  * REDUCE: a CANONICAL rank-ascending fp32 sum (((x0 + x1) + x2) + x3) on every rank, rounded
-+//    to T once, so all four ranks hold the same bits -- the replicated-state invariant the fused
++//    to T once, so all four ranks hold the same bits, the replicated-state invariant the fused
 +//    epilogues depend on. The rank selects which operand is the local input; the summation order
 +//    never changes.
 +#include "r4d.h"

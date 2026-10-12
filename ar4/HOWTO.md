@@ -123,7 +123,7 @@ RUNTIME=docker MODE=prod MODEL_DIR=Qwen3.8-27B-PARO-int5 SPEC=7 PORT=8090 TP=4 G
 compiles for ~11 min; warm restarts are ~7 min. The boot log must show, per worker:
 
 ```
-[radiance] using patched r4d.so from /home/otnops/.cache/radiance-libr4d/b9e42ab-rx6-ar4
+[radiance] using patched r4d.so from ~/.cache/radiance-libr4d/b9e42ab-rx6-ar4
   OK    all-reduce 4-rank: install gate            (and the other patch_ar_4rank lines)
 [radiance] custom all-reduce INSTALLED (rank=N max=768KB finegrained=True ... nb=8..8)
 ```
