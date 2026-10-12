@@ -27,19 +27,19 @@ path is unchanged and still bit-identical to RCCL.
 
 ## Files
 
-- `r4d_ar_oneshot_4rank_exact.hip` — the kernel, templated on the 3-rank one: three receive
+- `r4d_ar_oneshot_4rank_exact.hip`: the kernel, templated on the 3-rank one: three receive
   regions x two seq-parity slots, three flag rows, canonical fp32 sum `((x0+x1)+x2)+x3`.
-- `libr4d-ar4.patch` — the full diff against libr4d `b9e42ab-rx6` (header decl, pybind, registry
+- `libr4d-ar4.patch`: the full diff against libr4d `b9e42ab-rx6` (header decl, pybind, registry
   row with `world_size == 4`, build.sh unit). On monolith the built tree is
   `~/.cache/radiance-libr4d/b9e42ab-rx6-ar4` (`make IMAGE=stilldeadcode/vllm-radiance:0.9.3`).
-- `patch_ar_4rank.py` — radiance_allreduce.py patch (same style as the repo's patch_ar_3rank.py,
+- `patch_ar_4rank.py`: radiance_allreduce.py patch (same style as the repo's patch_ar_3rank.py,
   which it supersedes): peer list / scratch regions follow world size, 3- and 4-rank launch arms,
   ws=4 message cap, install gate ws in (2,3,4). Lives at `~/vllm-mxfp4/patch_ar_4rank.py`.
-- `run_paroquant_ar4.diff` — the two-line change to the launcher: run the patch, pass
+- `run_paroquant_ar4.diff`: the two-line change to the launcher: run the patch, pass
   `RADIANCE_USE_R4D_AR` / `RADIANCE_AR4_MAX_KB` through. `~/vllm-mxfp4/paroquant/run_paroquant_ar4.sh`.
-- `tp4-ar4-launch.sh`, `tp4-ar4-trial.sh` — TP=4 serve on :8090 with the new library, then
+- `tp4-ar4-launch.sh`, `tp4-ar4-trial.sh`: TP=4 serve on :8090 with the new library, then
   `bench_oai.py` + `prefill_conc.py`. `~/bench/` on monolith.
-- `ar_bench.py`, `ar-bench.sh` — the microbenchmark (`PATCH=1 R4D=<dir> ar-bench.sh 0,1,2,3`).
+- `ar_bench.py`, `ar-bench.sh`: the microbenchmark (`PATCH=1 R4D=<dir> ar-bench.sh 0,1,2,3`).
 
 ## Serving results (2026-10-12, `bench_oai.py` medium effort; `prefill_conc.py` aggregate)
 

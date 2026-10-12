@@ -1,12 +1,12 @@
-# libr4d-ar4 — provenance
+# libr4d-ar4: provenance
 
 This is the libr4d kernel library at upstream commit `b9e42ab` ("[FIX] correct the exponent clamp
 rationale in gdn chunk_scan", https://codeberg.org/StillDeadcode/libr4d), with Radiance's
 `r4d_radiance_extras.patch` (rx6: 2-rank `exact_nq`, 3-rank all-reduce, attention/GDN extras, from
 https://github.com/jdrews/vllm-mxfp4) already applied, plus the work from this project:
 
-- `r4d_ar_oneshot_4rank_exact.hip` — new: one-shot P2P push all-reduce for exactly four ranks.
-- `r4d.h`, `r4d_module.hip`, `r4d_registry.hip`, `build.sh` — declaration, pybind binding, registry row
+- `r4d_ar_oneshot_4rank_exact.hip`, new: one-shot P2P push all-reduce for exactly four ranks.
+- `r4d.h`, `r4d_module.hip`, `r4d_registry.hip`, `build.sh`: declaration, pybind binding, registry row
   (`world_size == 4`), build unit. Diff vs rx6: `../scripts/ar4/libr4d-ar4.patch`.
 
 Build (inside the Radiance image; the host hipcc on monolith crashes):

@@ -3,7 +3,7 @@
 This is the implementation and operations guide. The measurements and the story of how it was found
 are in `README.md` (this directory).
 
-## 1. What it is, in one paragraph
+## 1. Overview
 
 Radiance (the `vllm-mxfp4` fork of vLLM for gfx1201) replaces RCCL for tensor-parallel all-reduces with
 a **one-shot P2P push kernel** from its `libr4d` library: every rank writes its partial sum straight into
@@ -31,7 +31,7 @@ the kernel saves.
 
 ## 3. Build the library
 
-Option A — use the full tree in this repo (`../../libr4d-ar4/`, rx6 + the 4-rank kernel):
+Option A: use the full tree in this repo (`../../libr4d-ar4/`, rx6 + the 4-rank kernel):
 
 ```sh
 cp -r inference-tuning/libr4d-ar4 ~/.cache/radiance-libr4d/b9e42ab-rx6-ar4
@@ -40,7 +40,7 @@ make IMAGE=stilldeadcode/vllm-radiance:0.9.3          # ~3 min, all units, -> r4
 make verify IMAGE=stilldeadcode/vllm-radiance:0.9.3   # lists the kernels; expect ar_oneshot_4rank_exact
 ```
 
-Option B — patch an existing rx6 tree:
+Option B: patch an existing rx6 tree:
 
 ```sh
 cp -r ~/.cache/radiance-libr4d/b9e42ab-rx6 ~/.cache/radiance-libr4d/b9e42ab-rx6-ar4
@@ -79,7 +79,7 @@ at container start, in the same idempotent anchor/replace style as Radiance's ow
 4. **Launch arm** for ws == 3 and ws == 4 (argument order: my scratch, peer scratches ascending, my flags,
    peer flags ascending, seq counters, slot words, rank, in, out, numel, dtype, stream, nblocks, nthreads,
    drain, acq).
-5. **Compressed (wht6) path** disabled at ws ≠ 2 — there is no 3-/4-rank lossy kernel.
+5. **Compressed (wht6) path** disabled at ws ≠ 2, since there is no 3-/4-rank lossy kernel.
 6. **Install gate**: `world_size in (2, 3, 4)`; which sizes actually get a kernel is still the library's
    answer via `r4d.select`.
 
@@ -90,7 +90,7 @@ Diagnostics in the same patch, all off by default and safe to leave in:
 
 | env | effect |
 |---|---|
-| `RADIANCE_AR4_SHADOW=1` | after every 4-rank call (eager serve only — graph replay never runs Python) recompute with RCCL on a clone, all-gather the outputs, log mismatches and cross-rank bit differences |
+| `RADIANCE_AR4_SHADOW=1` | after every 4-rank call (eager serve only, because graph replay never runs Python) recompute with RCCL on a clone, all-gather the outputs, log mismatches and cross-rank bit differences |
 | `RADIANCE_AR4_MIN_KB=N` | messages below N KB go to RCCL (size-split experiments) |
 | `RADIANCE_AR4_SKIP_FILES=<regex>` | call sites whose Python stack matches take RCCL; under CUDA graphs the choice is baked at capture, so `dflash\|spec_decode` routes the whole drafter to RCCL |
 
@@ -123,7 +123,7 @@ RUNTIME=docker MODE=prod MODEL_DIR=Qwen3.8-27B-PARO-int5 SPEC=7 PORT=8090 TP=4 G
 compiles for ~11 min; warm restarts are ~7 min. The boot log must show, per worker:
 
 ```
-[radiance] using patched r4d.so from ~/.cache/radiance-libr4d/b9e42ab-rx6-ar4
+[radiance] using patched r4d.so from /home/otnops/.cache/radiance-libr4d/b9e42ab-rx6-ar4
   OK    all-reduce 4-rank: install gate            (and the other patch_ar_4rank lines)
 [radiance] custom all-reduce INSTALLED (rank=N max=768KB finegrained=True ... nb=8..8)
 ```
@@ -135,7 +135,7 @@ To make it the service: copy `deploy/vllm-qwen.service`, set `TP=4 GPUS=0,1,2,3 
 point `ExecStart` at `run_paroquant_ar4.sh` and `ExecStop` at the container name, keep `PORT=8080` if
 clients expect it. Nothing else on the box may hold the four cards.
 
-## 6. `GPU_MAX_HW_QUEUES=1` — do not skip this
+## 6. `GPU_MAX_HW_QUEUES=1` (required)
 
 On gfx1201 a vLLM/Radiance process lands at spawn in one of two dispatch states. In the slow one every
 small kernel in HIP-graph replay is followed by ~15 µs of idle instead of ~3 µs; with ~1,000 kernels per
@@ -160,7 +160,7 @@ Microbenchmark (no vLLM; a fresh container per run; needs the cards free):
 PATCH=1 R4D=$HOME/.cache/radiance-libr4d/b9e42ab-rx6-ar4 ~/bench/ar-bench.sh 0,1,2,3
 ```
 
-Prints per message size: RCCL eager/graph, one-shot eager/graph, and a check column — `ok` means the
+Prints per message size: RCCL eager/graph, one-shot eager/graph, and a check column. `ok` means the
 sum matches an fp32 reference and all ranks hold identical bits (`bitexact` is vs RCCL, only reachable at
 2 ranks where the summation order coincides). Expected at 4 ranks, HIP graph: 10 KB 6 µs vs 35, 80 KB
 13 vs 38, 320 KB 30 vs 48, 640 KB 57 vs 62, 1.25 MB 104 vs 85 (hence the cap). Modes via env:
@@ -188,7 +188,7 @@ table and the idle gap around each all-reduce. This is how the dispatch state wa
 
 - **Push model.** Each block owns a contiguous chunk of 16-byte words of the message. It copies its chunk
   of the local input into all three peers' scratch (stores interleaved so one drain covers all), drains
-  (`s_wait_storecnt 0` — correct for fine-grained/uncached memory, where posted PCIe writes to one peer
+  (`s_wait_storecnt 0`, correct for fine-grained/uncached memory, where posted PCIe writes to one peer
   stay ordered), releases one flag per peer with a system-scope release store, then thread 0 spins on its
   own three flags (system-scope acquire loads) until all reach this call's sequence number, and the
   block reduces its chunk: local input + three regions, in **canonical rank order**
@@ -222,4 +222,4 @@ table and the idle gap around each all-reduce. This is how the dispatch state wa
 - **Other RDNA4 cards**: build with `GFX_ARCH=gfx1200` etc. (`build.sh`). The dispatch-state issue is a
   gfx1201 report; test for it anyway (section 6).
 - **If a boot hangs at capture or decodes garbage**: `RADIANCE_USE_R4D_AR=0` returns to RCCL with no
-  other change — that is the A/B switch and the escape hatch.
+  other change. That is the A/B switch and the escape hatch.
