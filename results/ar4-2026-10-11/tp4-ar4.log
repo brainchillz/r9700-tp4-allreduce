@@ -1,0 +1,47 @@
+launcher pid 17905 Mon Oct 12 02:29:18 AM UTC 2026
+healthy after 480 s Mon Oct 12 02:37:19 AM UTC 2026
+      1   OK    all-reduce 4-rank: install gate
+      1   OK    all-reduce 4-rank: launch arms
+      1   OK    all-reduce 4-rank: peer list / scratch regions
+      1   OK    all-reduce 4-rank: quant path ws gate
+      1   OK    all-reduce 4-rank: ws=4 message cap
+      1 [radiance] using patched r4d.so from ~/.cache/radiance-libr4d/b9e42ab-rx6-ar4
+      1 (Worker pid=3299) [radiance] custom all-reduce INSTALLED (rank=0 max=768KB finegrained=True drain=3 acq=0 nt=1024 nb=4..24)
+      1 (Worker pid=3300) [radiance] custom all-reduce INSTALLED (rank=1 max=768KB finegrained=True drain=3 acq=0 nt=1024 nb=4..24)
+      1 (Worker pid=3301) [radiance] custom all-reduce INSTALLED (rank=2 max=768KB finegrained=True drain=3 acq=0 nt=1024 nb=4..24)
+      1 (Worker pid=3302) [radiance] custom all-reduce INSTALLED (rank=3 max=768KB finegrained=True drain=3 acq=0 nt=1024 nb=4..24)
+== bench_oai Mon Oct 12 02:37:39 AM UTC 2026
+tp4-ar4        long-pp   pp= 3458tok ttft= 0.71s ( 4852.0 t/s) | tg= 300tok 139.57 t/s | wall=  2.9s
+tp4-ar4        short-pp  pp=   55tok ttft= 0.05s ( 1173.2 t/s) | tg= 300tok 107.99 t/s | wall=  2.8s
+tp4-ar4        code      pp=   53tok ttft= 0.05s ( 1148.4 t/s) | tg= 400tok 125.41 t/s | wall=  3.2s
+tp4-ar4        long-pp   pp= 3458tok ttft= 0.37s ( 9385.6 t/s) | tg= 300tok 139.67 t/s | wall=  2.5s
+tp4-ar4        short-pp  pp=   55tok ttft= 0.05s ( 1195.6 t/s) | tg= 300tok 108.11 t/s | wall=  2.8s
+tp4-ar4        code      pp=   53tok ttft= 0.05s ( 1156.5 t/s) | tg= 400tok 125.98 t/s | wall=  3.2s
+== prefill_conc Mon Oct 12 02:37:57 AM UTC 2026
+=== prefill: unique random prompts (prefix cache cannot hit), max_tokens=1, 2 reps each, best shown
+  target   1024: prompt_tokens   2216  ttft    0.42s  prefill   5237.9 tok/s
+  target   1024: prompt_tokens   2212  ttft    0.42s  prefill   5241.2 tok/s
+  pp2212: 5241.2 tok/s (best of 2)
+  target   4096: prompt_tokens   8780  ttft    1.64s  prefill   5355.0 tok/s
+  target   4096: prompt_tokens   8778  ttft    1.64s  prefill   5344.4 tok/s
+  pp8780: 5355.0 tok/s (best of 2)
+  target   8192: prompt_tokens  17570  ttft    3.34s  prefill   5255.9 tok/s
+  target   8192: prompt_tokens  17578  ttft    3.35s  prefill   5248.6 tok/s
+  pp17570: 5255.9 tok/s (best of 2)
+  target  32768: prompt_tokens  70053  ttft   14.64s  prefill   4783.5 tok/s
+  target  32768: prompt_tokens  70167  ttft   14.70s  prefill   4774.7 tok/s
+  pp70053: 4783.5 tok/s (best of 2)
+  target  65536: prompt_tokens 140259  ttft   33.13s  prefill   4233.7 tok/s
+  target  65536: prompt_tokens 140291  ttft   33.16s  prefill   4230.6 tok/s
+  pp140259: 4233.7 tok/s (best of 2)
+=== decode: aggregate at N concurrent streams, thinking off, 400 tokens each, temp 0
+  conc 1: per-stream decode  115.8- 115.8 tok/s  aggregate   114.8 tok/s over the wall (400 tok in 3.5s)
+  conc 4: per-stream decode   88.4- 100.9 tok/s  aggregate   345.9 tok/s over the wall (1600 tok in 4.6s)
+  conc 8: per-stream decode   62.6-  71.0 tok/s  aggregate   498.6 tok/s over the wall (3200 tok in 6.4s)
+== power during idle
+=================================== Power Consumption ====================================
+GPU[0]		: Average Graphics Package Power (W): 209.0
+GPU[1]		: Average Graphics Package Power (W): 209.0
+GPU[2]		: Average Graphics Package Power (W): 209.0
+GPU[3]		: Average Graphics Package Power (W): 209.0
+done Mon Oct 12 02:39:58 AM UTC 2026

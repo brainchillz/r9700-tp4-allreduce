@@ -1,0 +1,120 @@
+### ar4-p 03:15:08
+healthy after 470 s
+warm:
+{'prompt_tokens': 26, 'total_tokens': 86, 'completion_tokens': 60, 'prompt_tokens_details': None}
+{'prompt_tokens': 26, 'total_tokens': 86, 'completion_tokens': 60, 'prompt_tokens_details': None}
+ started profile 03:22:59
+profiled:
+{'prompt_tokens': 26, 'total_tokens': 186, 'completion_tokens': 160, 'prompt_tokens_details': None}
+ stopped 03:23:07
+total 15472
+drwxrwxr-x 2 otnops otnops    4096 Oct 12 03:23 .
+drwxrwxr-x 7 otnops otnops    4096 Oct 12 02:57 ..
+-rw-r--r-- 1 root   root      1046 Oct 12 03:23 monolith_1.async_llm.1791775381070117414.pt.trace.json.gz
+-rw-r--r-- 1 root   root     20654 Oct 12 03:23 profiler_out_0.txt
+-rw-r--r-- 1 root   root     20657 Oct 12 03:23 profiler_out_1.txt
+-rw-r--r-- 1 root   root     20657 Oct 12 03:23 profiler_out_2.txt
+-rw-r--r-- 1 root   root     20657 Oct 12 03:23 profiler_out_3.txt
+-rw-r--r-- 1 root   root   3909321 Oct 12 03:23 rank0.1791775381387494594.pt.trace.json.gz
+-rw-r--r-- 1 root   root   3945374 Oct 12 03:23 rank1.1791775381389254338.pt.trace.json.gz
+-rw-r--r-- 1 root   root   3927621 Oct 12 03:23 rank2.1791775381382348073.pt.trace.json.gz
+-rw-r--r-- 1 root   root   3943878 Oct 12 03:23 rank3.1791775381392993697.pt.trace.json.gz
+traces in ~/bench/prof-ar4-p
+572 ~/bench/greedy-ar4-p.txt
+--- trace monolith_1.async_llm.1791775381070117414.pt.trace.json.gz 4.0K
+--- trace profiler_out_0.txt 24K
+--- trace profiler_out_1.txt 24K
+--- trace profiler_out_2.txt 24K
+--- trace profiler_out_3.txt 24K
+--- trace rank0.1791775381387494594.pt.trace.json.gz 3.8M
+--- trace rank1.1791775381389254338.pt.trace.json.gz 3.8M
+--- trace rank2.1791775381382348073.pt.trace.json.gz 3.8M
+--- trace rank3.1791775381392993697.pt.trace.json.gz 3.8M
+Traceback (most recent call last):
+  File "~/bench/trace_summary.py", line 8, in <module>
+    d = json.load(f)
+  File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+### rccl-p 03:23:27
+healthy after 480 s
+warm:
+{'prompt_tokens': 26, 'total_tokens': 86, 'completion_tokens': 60, 'prompt_tokens_details': None}
+{'prompt_tokens': 26, 'total_tokens': 86, 'completion_tokens': 60, 'prompt_tokens_details': None}
+ started profile 03:31:29
+profiled:
+{'prompt_tokens': 26, 'total_tokens': 186, 'completion_tokens': 160, 'prompt_tokens_details': None}
+ stopped 03:31:40
+total 20032
+drwxrwxr-x 2 otnops otnops    4096 Oct 12 03:31 .
+drwxrwxr-x 7 otnops otnops    4096 Oct 12 02:57 ..
+-rw-r--r-- 1 root   root      1048 Oct 12 03:31 monolith_1.async_llm.1791775891593499230.pt.trace.json.gz
+-rw-r--r-- 1 root   root     20651 Oct 12 03:31 profiler_out_0.txt
+-rw-r--r-- 1 root   root     20654 Oct 12 03:31 profiler_out_1.txt
+-rw-r--r-- 1 root   root     20654 Oct 12 03:31 profiler_out_2.txt
+-rw-r--r-- 1 root   root     20654 Oct 12 03:31 profiler_out_3.txt
+-rw-r--r-- 1 root   root   5077706 Oct 12 03:31 rank0.1791775892076824650.pt.trace.json.gz
+-rw-r--r-- 1 root   root   5115594 Oct 12 03:31 rank1.1791775892073107455.pt.trace.json.gz
+-rw-r--r-- 1 root   root   5102871 Oct 12 03:31 rank2.1791775892067988337.pt.trace.json.gz
+-rw-r--r-- 1 root   root   5102251 Oct 12 03:31 rank3.1791775892073948053.pt.trace.json.gz
+traces in ~/bench/prof-rccl-p
+576 ~/bench/greedy-rccl-p.txt
+--- trace monolith_1.async_llm.1791775891593499230.pt.trace.json.gz 4.0K
+--- trace profiler_out_0.txt 24K
+--- trace profiler_out_1.txt 24K
+--- trace profiler_out_2.txt 24K
+--- trace profiler_out_3.txt 24K
+--- trace rank0.1791775892076824650.pt.trace.json.gz 4.9M
+--- trace rank1.1791775892073107455.pt.trace.json.gz 4.9M
+--- trace rank2.1791775892067988337.pt.trace.json.gz 4.9M
+--- trace rank3.1791775892073948053.pt.trace.json.gz 4.9M
+Traceback (most recent call last):
+  File "~/bench/trace_summary.py", line 8, in <module>
+    d = json.load(f)
+  File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+### diff of greedy outputs (ar4 vs rccl)
+5a6
+> 
+7,9c8,10
+< *   **Topology:** Both GPUs (GPU A and GPU B) are connected to different downstream ports of the same PCIe Switch.
+< *   **Address Space:** GPU A has been assigned a Base Address Register (BAR) region in the system memory map that corresponds to GPU B’s memory. This is typically done by the BIOS/UEFI or the OS during initialization.
+< *   **IOMMU/VT-d:** If an IOMMU (Input-Output Memory Management Unit) is enabled, it must be configured to allow P2P traffic or to translate the addresses correctly. In many high-performance GPU clusters, IOMMU is often bypassed or configured in "passthrough" mode for P2P to reduce latency.
+---
+> *   **Topology:** Two GPUs (GPU A and GPU B) are connected to different downstream ports of a PCIe Switch. The Switch is connected to the Root Complex (CPU) via an Upstream Port.
+> *   **Address Space:** GPU A has a memory region (e.g., a buffer) mapped into the system physical address space. GPU B has been programmed (via DMA descriptors or driver setup) to write to the physical address of GPU A’s buffer.
+> *   **P2P Support:** The PCIe Switch must support P2P routing. Most modern switches do, but some older or low-cost switches may force all traffic through the Root Complex (CPU) if P2P is disabled or unsupported.
+13,15c14,17
+< #### Step 1: GPU A Initiates the Write
+< GPU A’s memory controller generates a **Memory Write** TLP (Transaction Layer Packet).
+< *   **Source ID:** GPU A’s Bus/Device
+---
+> #### Step 1: GPU A Initiates the Write (DMA Engine)
+> *   GPU A’s DMA engine prepares a **Memory Write TLP** (Transaction Layer Packet).
+> *   The TLP contains:
+>    
+45c47,48
+### done 03:32:01

@@ -1,0 +1,48 @@
+### ar4-p2 05:18:03
+healthy after 470 s
+ar4-p2         long-pp   pp= 3458tok ttft= 0.72s ( 4806.9 t/s) | tg= 300tok 138.89 t/s | wall=  2.9s
+ar4-p2         short-pp  pp=   55tok ttft= 0.05s ( 1146.0 t/s) | tg= 300tok 107.90 t/s | wall=  2.8s
+ar4-p2         code      pp=   53tok ttft= 0.05s ( 1112.6 t/s) | tg= 400tok 125.41 t/s | wall=  3.2s
+rank0 steps=200  median/max ms  exec_model   1.06/  11.20 | sample_tok   1.51/   2.11 | rpc_wait  25.85/  29.70 | gpu_span  28.47/  45.70 | drafter_tail   3.39/   3.57 | out_wait  25.58/  29.39 | out_
+rank0 steps=250  median/max ms  exec_model   1.06/   1.09 | sample_tok   1.50/   1.56 | rpc_wait  25.81/  26.10 | gpu_span  28.41/  28.66 | drafter_tail   3.33/   3.49 | out_wait  25.57/  25.81 | out_
+ started profile 05:26:03
+ stopped 05:26:12
+traces in ~/bench/prof-ar4-p2
+gpu annotations: 63  generation steps: 62  kernels: 70772
+first->last step wall: 1867.7 ms over 62 steps = 30.12 ms/step incl. gaps
+CPU launches total: graph 190  kernel 7406
+
+per step (median over 62 steps), ms:
+  step dur  25.95  busy  15.55  idle  10.40   kernels/step 1056  graph launches/step 1
+  all_reduce     2.54   (n=129)
+  target_gemm    9.65
+  gdn            1.07
+  attn           0.26
+  drafter        0.00   (n=0)
+  norm_rot       1.07
+  sampler        0.00
+  other          0.97
+kernels: 70772  span: 1910.5 ms  busy: 1056.6 ms
+ count  total ms  mean us  name
+ 16128    522.57     32.4  void pq_int4_fp8_gemm_decode
+  8127    159.24     19.6  void (anonymous namespace)::r4d_ar_oneshot_4rank_exact_kernel
+  3087     88.53     28.7  Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT16x16x32_MI16x16x1_SN_L
+  2976     66.25     22.3  void r4d_gdn_fused_update_kernel
+  8001     35.87      4.5  void pq_add_rms_rot
+  8064     31.93      4.0  void pq_ew_rot
+  4496     16.37      3.6  void at::native::elementwise_kernel_manual_unroll
+    63     15.99    253.8  _draft_head_int2
+    63     14.61    231.9  _gemm_a8w8_blockscale_preshuffle_kernel_GROUP_K_128_GROUP_N_128_BLOCK_
+  1008     11.37     11.3  triton_poi_fused_clone_copy_index_select_slice_split_2
+  2517     11.36      4.5  Memcpy DtoD (Device -> Device)
+   992     11.17     11.3  void r4d_attn_decode_kernel
+  4801     10.56      2.2  void at::native::vectorized_elementwise_kernel
+   126      6.48     51.4  ncclDevKernel_Generic_4(ncclDevKernelArgsStorage
+
+all-reduce-ish kernels: 8253  total 165.72 ms  mean 20.1 us
+idle gap before AR: mean 17.1 us median 15.2; after: mean 14.5 median 14.7
+[('void (anonymous namespace)::r4d_ar_oneshot_4rank_exact_kerne', 8127), ('ncclDevKernel_Generic_4(ncclDevKernelArgsStorage', 126)]
+GPU idle within span: 853.8 ms (45%)
+
+runtime API calls: [('hipPointerGetAttribute', 13590), ('hipLaunchKernel', 5560), ('hipMemcpyAsync', 2517), ('hipModuleLaunchKernel', 1783), ('hipEventRecord', 910), ('hipStreamIsCapturing', 721), ('hipEventDestroy', 382), ('hipPointerGetAttributes', 268)]
+### done 05:26:30

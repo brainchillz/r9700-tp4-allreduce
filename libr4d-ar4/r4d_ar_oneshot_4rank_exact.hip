@@ -1,0 +1,189 @@
+// r4d_ar_oneshot_4rank_exact.hip: r4d_ar_oneshot_4rank_exact -- multi-block one-shot P2P-BAR
+// all-reduce for EXACTLY FOUR ranks (four R9700 over PCIe, TP=4). Templated on the 2- and 3-rank
+// kernels, which stay byte-identical; everything here is additive.
+//
+// Why a one-shot at four ranks: RCCL on this box costs ~40 us per decode-size all-reduce at
+// world_size 4 (measured 2026-10-11, 10-640 KB, HIP graph), against ~5-7 us for the 2-rank one-shot.
+// At ~128 reductions per decode step that is ~5 ms of RCCL per step. The push model moves 3x the
+// message out of every card, which is nothing at decode sizes and a loss at prefill sizes, so the
+// Python side caps this kernel at decode-size messages and leaves prefill on RCCL.
+//
+// What generalises from the 3-rank kernel:
+//  * PUSH model: each rank writes ITS input into all THREE peers' IPC scratch (stores interleaved
+//    so one drain covers all of them), then reduces local input + the three peer messages -> out.
+//  * SCRATCH: three receive REGIONS (one per sender) x two seq-parity SLOTS x max_bytes. In
+//    receiver j's scratch, sender i writes region i - (i > j): regions hold the peers in
+//    ascending rank order. The host computes "my region in each peer" once.
+//  * FLAGS: three regions x AR_MAX_BLOCKS, one flag per (sender, block).
+//  * HANDSHAKE: thread 0 releases all three peer flags, then spins until all three of its own
+//    flags for this block reach the sequence number. Per-block device-resident seq counters and
+//    the (seq & 1) double-buffer are unchanged; the reuse argument carries over per peer pair.
+//  * REDUCE: a CANONICAL rank-ascending fp32 sum (((x0 + x1) + x2) + x3) on every rank, rounded
+//    to T once, so all four ranks hold the same bits -- the replicated-state invariant the fused
+//    epilogues depend on. The rank selects which operand is the local input; the summation order
+//    never changes.
+#include "r4d.h"
+#include <hip/hip_fp16.h>
+#include <hip/hip_bf16.h>
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+
+#define R4D_AR4_SPIN_MAX 4000000000ULL
+#define R4D_AR4_MAX_BLOCKS 512   // == R4D_AR_MAX_BLOCKS of the 2-rank units (flags per region)
+
+namespace {
+
+__device__ __forceinline__ void store_sys_rel4(unsigned int* p, unsigned int v) {
+  __hip_atomic_store(p, v, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
+__device__ __forceinline__ unsigned int load_sys_acq4(const unsigned int* p) {
+  return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
+__device__ __forceinline__ float to_f4(const float& x) { return x; }
+__device__ __forceinline__ float to_f4(const __half& x) { return __half2float(x); }
+__device__ __forceinline__ float to_f4(const __hip_bfloat16& x) { return (float)x; }
+__device__ __forceinline__ void from_f4(float v, float& o) { o = v; }
+__device__ __forceinline__ void from_f4(float v, __half& o) { o = __float2half(v); }
+__device__ __forceinline__ void from_f4(float v, __hip_bfloat16& o) { o = (__hip_bfloat16)v; }
+
+// out = (((a + b) + c) + d) per lane in fp32, rounded to T once. Operands arrive in canonical
+// rank order, so every rank evaluates the identical expression.
+template <typename T, int LANES>
+__device__ __forceinline__ int4 vadd4(const int4& a, const int4& b, const int4& c, const int4& d) {
+  int4 r;
+  const T* pa = reinterpret_cast<const T*>(&a);
+  const T* pb = reinterpret_cast<const T*>(&b);
+  const T* pc = reinterpret_cast<const T*>(&c);
+  const T* pd = reinterpret_cast<const T*>(&d);
+  T* pr = reinterpret_cast<T*>(&r);
+#pragma unroll
+  for (int j = 0; j < LANES; ++j)
+    from_f4(((to_f4(pa[j]) + to_f4(pb[j])) + to_f4(pc[j])) + to_f4(pd[j]), pr[j]);
+  return r;
+}
+
+template <typename T, int LANES>
+__global__ void r4d_ar_oneshot_4rank_exact_kernel(
+    const int4* __restrict__ in4, int4* __restrict__ out4,
+    const int4* my_base, int4* p0_base, int4* p1_base, int4* p2_base,
+    unsigned int* my_flags, unsigned int* p0_flags, unsigned int* p1_flags, unsigned int* p2_flags,
+    unsigned int* seq_ctrs, int n16, int slot_stride16, int region_stride16,
+    int my_region_in_p0, int my_region_in_p1, int my_region_in_p2, int rank, int drain, int acq) {
+  const int b = blockIdx.x, nb = gridDim.x, tid = threadIdx.x, nt = blockDim.x;
+  __shared__ unsigned int s_seq;
+  if (tid == 0) s_seq = atomicAdd(&seq_ctrs[b], 1u) + 1u;  // per-block, replay-safe
+  __syncthreads();
+  const unsigned int s = s_seq;
+  const int slot = (int)(s & 1u);
+  // where MY data goes in each peer (peers in ascending rank order)
+  int4* p0 = p0_base + (size_t)my_region_in_p0 * region_stride16 + (size_t)slot * slot_stride16;
+  int4* p1 = p1_base + (size_t)my_region_in_p1 * region_stride16 + (size_t)slot * slot_stride16;
+  int4* p2 = p2_base + (size_t)my_region_in_p2 * region_stride16 + (size_t)slot * slot_stride16;
+  // where each peer's data lands in MY scratch: region r holds the r-th peer in ascending order
+  const int4* r0 = my_base + (size_t)0 * region_stride16 + (size_t)slot * slot_stride16;
+  const int4* r1 = my_base + (size_t)1 * region_stride16 + (size_t)slot * slot_stride16;
+  const int4* r2 = my_base + (size_t)2 * region_stride16 + (size_t)slot * slot_stride16;
+  // operands in canonical rank order: position `rank` is the local input, the rest are the
+  // regions in ascending order. Block-uniform selects, resolved once.
+  const int4* x0 = (rank == 0) ? in4 : r0;
+  const int4* x1 = (rank == 1) ? in4 : ((rank < 1) ? r0 : r1);
+  const int4* x2 = (rank == 2) ? in4 : ((rank < 2) ? r1 : r2);
+  const int4* x3 = (rank == 3) ? in4 : r2;
+
+  const int w = (n16 + nb - 1) / nb;
+  const int start = b * w;
+  int end = start + w; if (end > n16) end = n16;
+
+  // push chunk -> all three peers, stores interleaved so one drain covers all of them
+  {
+    int k = start + tid;
+    for (; k + 3 * nt < end; k += 4 * nt) {
+      int4 v0 = in4[k], v1 = in4[k + nt], v2 = in4[k + 2 * nt], v3 = in4[k + 3 * nt];
+      p0[k] = v0; p1[k] = v0; p2[k] = v0;
+      p0[k + nt] = v1; p1[k + nt] = v1; p2[k + nt] = v1;
+      p0[k + 2 * nt] = v2; p1[k + 2 * nt] = v2; p2[k + 2 * nt] = v2;
+      p0[k + 3 * nt] = v3; p1[k + 3 * nt] = v3; p2[k + 3 * nt] = v3;
+    }
+    for (; k < end; k += nt) { int4 v = in4[k]; p0[k] = v; p1[k] = v; p2[k] = v; }
+  }
+  if (drain == 1) __threadfence_system();
+  else if (drain == 3) asm volatile("s_wait_storecnt 0x0" ::: "memory");
+  __syncthreads();
+  if (tid == 0) {
+    if (drain == 2) __threadfence_system();
+    store_sys_rel4(&p0_flags[my_region_in_p0 * R4D_AR4_MAX_BLOCKS + b], s);
+    store_sys_rel4(&p1_flags[my_region_in_p1 * R4D_AR4_MAX_BLOCKS + b], s);
+    store_sys_rel4(&p2_flags[my_region_in_p2 * R4D_AR4_MAX_BLOCKS + b], s);
+    const unsigned int* f0 = &my_flags[0 * R4D_AR4_MAX_BLOCKS + b];
+    const unsigned int* f1 = &my_flags[1 * R4D_AR4_MAX_BLOCKS + b];
+    const unsigned int* f2 = &my_flags[2 * R4D_AR4_MAX_BLOCKS + b];
+    unsigned long long z = 0;
+    bool d0 = false, d1 = false, d2 = false;
+    while (!(d0 && d1 && d2)) {
+      if (!d0) d0 = load_sys_acq4(f0) >= s;
+      if (!d1) d1 = load_sys_acq4(f1) >= s;
+      if (!d2) d2 = load_sys_acq4(f2) >= s;
+      if (++z > R4D_AR4_SPIN_MAX) break;
+    }
+  }
+  __syncthreads();
+  if (acq) __threadfence_system();
+  // reduce chunk in canonical rank order
+  {
+    int k = start + tid;
+    for (; k + 3 * nt < end; k += 4 * nt) {
+      out4[k]          = vadd4<T, LANES>(x0[k],          x1[k],          x2[k],          x3[k]);
+      out4[k + nt]     = vadd4<T, LANES>(x0[k + nt],     x1[k + nt],     x2[k + nt],     x3[k + nt]);
+      out4[k + 2 * nt] = vadd4<T, LANES>(x0[k + 2 * nt], x1[k + 2 * nt], x2[k + 2 * nt], x3[k + 2 * nt]);
+      out4[k + 3 * nt] = vadd4<T, LANES>(x0[k + 3 * nt], x1[k + 3 * nt], x2[k + 3 * nt], x3[k + 3 * nt]);
+    }
+    for (; k < end; k += nt) out4[k] = vadd4<T, LANES>(x0[k], x1[k], x2[k], x3[k]);
+  }
+}
+
+}  // namespace
+
+// Host entry. Scratch per rank is 3 regions x 2 slots x (slot_stride16 * 16) bytes; flags per
+// rank are 3 x R4D_AR4_MAX_BLOCKS uints. p0/p1/p2 are the peers in ascending rank order; the
+// region this rank writes in each is derived here (i - (i > j)).
+void r4d_ar_oneshot_4rank_exact(long my_scratch, long p0_scratch, long p1_scratch, long p2_scratch,
+                                long my_flags, long p0_flags, long p1_flags, long p2_flags,
+                                long seq_ctrs, long slot_stride16, long rank,
+                                long inp, long out, long n_elem, long dtype,
+                                long stream_i, long nblocks, long nthreads,
+                                long drain, long acq) {
+  hipStream_t st = (hipStream_t)stream_i;
+  if (rank < 0 || rank > 3) throw std::runtime_error("all_reduce_4rank: rank must be 0..3");
+  const int esize = (dtype == 2) ? 4 : 2;
+  const long nbytes = (long)n_elem * esize;
+  if (nbytes % 16 != 0) throw std::runtime_error("all_reduce_4rank: n_elem*esize not 16B-aligned");
+  if (nbytes / 16 > slot_stride16) throw std::runtime_error("all_reduce_4rank: message exceeds a scratch slot");
+  const int n16 = (int)(nbytes / 16);
+  int nb = (int)nblocks;
+  if (nb < 1) nb = 1;
+  if (nb > n16) nb = n16;
+  if (nb > R4D_AR4_MAX_BLOCKS) nb = R4D_AR4_MAX_BLOCKS;
+  int nt = (int)nthreads;
+  if (nt < 64) nt = 64;
+  if (nt > 1024) nt = 1024;
+  // peers of `rank` in ascending order; my region in receiver j is rank - (rank > j).
+  int peers[3]; int np = 0;
+  for (int r = 0; r < 4; ++r) if (r != (int)rank) peers[np++] = r;
+  const int reg0 = (int)rank - (rank > peers[0] ? 1 : 0);
+  const int reg1 = (int)rank - (rank > peers[1] ? 1 : 0);
+  const int reg2 = (int)rank - (rank > peers[2] ? 1 : 0);
+  const int region_stride16 = 2 * (int)slot_stride16;
+#define L4(T, LN) r4d_ar_oneshot_4rank_exact_kernel<T, LN><<<nb, nt, 0, st>>>(                  \
+    (const int4*)inp, (int4*)out, (const int4*)my_scratch, (int4*)p0_scratch,                    \
+    (int4*)p1_scratch, (int4*)p2_scratch, (unsigned*)my_flags, (unsigned*)p0_flags,              \
+    (unsigned*)p1_flags, (unsigned*)p2_flags, (unsigned*)seq_ctrs, n16, (int)slot_stride16,      \
+    region_stride16, reg0, reg1, reg2, (int)rank, (int)drain, (int)acq)
+  if (dtype == 0) L4(__hip_bfloat16, 8);
+  else if (dtype == 1) L4(__half, 8);
+  else if (dtype == 2) L4(float, 4);
+  else throw std::runtime_error("all_reduce_4rank: bad dtype");
+#undef L4
+}
+
+int r4d_ar_4rank_max_blocks(void) { return R4D_AR4_MAX_BLOCKS; }

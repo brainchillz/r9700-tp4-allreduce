@@ -1,0 +1,30 @@
+--- run_paroquant.sh	2026-09-29 03:58:02.155291237 +0000
++++ run_paroquant_ar4.sh	2026-10-12 06:16:42.949182234 +0000
+@@ -286,10 +286,10 @@
+   -e VLLM_ROCM_USE_AITER_MHA=0 -e VLLM_ROCM_USE_AITER_MLA=0 -e VLLM_ROCM_USE_AITER_MOE=0 \
+   -e VLLM_ROCM_USE_AITER_LINEAR=0 -e VLLM_ROCM_USE_AITER_FP8BMM=0 \
+   -e VLLM_ROCM_USE_AITER_FP4BMM=0 -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+-  -e NCCL_PROTO=Simple \
+-  -e RADIANCE_USE_R4D=1 -e RADIANCE_USE_R4D_AR=1 -e RADIANCE_USE_R4D_AR_QUANT=1 \
++  -e NCCL_PROTO=Simple -e GPU_MAX_HW_QUEUES="${GPU_MAX_HW_QUEUES:-1}" \
++  -e RADIANCE_USE_R4D=1 -e RADIANCE_USE_R4D_AR="${RADIANCE_USE_R4D_AR:-1}" -e RADIANCE_USE_R4D_AR_QUANT=1 -e RADIANCE_AR4_MAX_KB="${RADIANCE_AR4_MAX_KB:-768}" -e RADIANCE_AR4_MIN_KB="${RADIANCE_AR4_MIN_KB:-0}" -e RADIANCE_AR4_SHADOW="${RADIANCE_AR4_SHADOW:-0}" -e RADIANCE_AR4_NB="${RADIANCE_AR4_NB:-8}" -e RADIANCE_DYNAMIC_DRAFT="${RADIANCE_DYNAMIC_DRAFT:-1}" -e RADIANCE_AR4_SKIP_FILES="${RADIANCE_AR4_SKIP_FILES:-}" \
+   -e RADIANCE_R4D_REPORT=1 -e RADIANCE_AR_MAX_KB=86016 \
+-  -e RADIANCE_STEP_TRACE="${RADIANCE_STEP_TRACE:-0}" \
++  -e RADIANCE_STEP_TRACE="${RADIANCE_STEP_TRACE:-0}" -e VLLM_TORCH_PROFILER_DIR="${VLLM_TORCH_PROFILER_DIR:-}" \
+   -e RADIANCE_DFLASH_CAPTURE_DIR="${CAPTURE_DIR:+/capture}" "${CAPTURE_MOUNT[@]}" \
+   -e RADIANCE_PRESHUFFLE=1 -e RADIANCE_FUSE_RMS_QUANT=1 \
+   -e R4D_ATTN_FP8="${R4D_ATTN_FP8:-3}" \
+@@ -358,6 +358,7 @@
+     python3 patch_dflash_selector_topk.py
+     python3 patch_dynwidth.py
+     python3 patch_ar_geometry.py
++    python3 patch_ar_4rank.py         # 3-/4-rank one-shot all-reduce (needs an r4d.so with ar_oneshot_4rank_exact)
+     python3 patch_gdn_merge_inproj.py
+     python3 patch_qwen3_thinkoff.py \
+       || echo "[radiance] WARNING: thinkoff patch did not apply"
+@@ -415,4 +416,4 @@
+   --override-generation-config '{"temperature":0.7,"top_p":0.95,"top_k":20}' \
+   --chat-template "$CT_PATH" \
+   "${SPEC_ARGS[@]}" \
+-  "${EXTRA_ARGS[@]}"
++  "${EXTRA_ARGS[@]}" ${EXTRA_VLLM_ARGS:-}

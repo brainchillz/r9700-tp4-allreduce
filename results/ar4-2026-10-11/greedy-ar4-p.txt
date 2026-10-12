@@ -1,0 +1,71 @@
+To explain how a PCIe (Peripheral Component Interconnect Express) switch routes a peer-to-peer (P2P) write between two GPUs, we must look at the transaction layer, the routing logic, and the specific mechanisms used to handle memory addresses that do not belong to the host CPU.
+
+Here is a detailed, step-by-step breakdown of the process.
+
+### 1. Prerequisites and Topology
+Before the transaction occurs, the following conditions must be met:
+*   **Topology:** Both GPUs (GPU A and GPU B) are connected to different downstream ports of the same PCIe Switch.
+*   **Address Space:** GPU A has been assigned a Base Address Register (BAR) region in the system memory map that corresponds to GPU B’s memory. This is typically done by the BIOS/UEFI or the OS during initialization.
+*   **IOMMU/VT-d:** If an IOMMU (Input-Output Memory Management Unit) is enabled, it must be configured to allow P2P traffic or to translate the addresses correctly. In many high-performance GPU clusters, IOMMU is often bypassed or configured in "passthrough" mode for P2P to reduce latency.
+
+### 2. Step-by-Step Transaction Flow
+
+#### Step 1: GPU A Initiates the Write
+GPU A’s memory controller generates a **Memory Write** TLP (Transaction Layer Packet).
+*   **Source ID:** GPU A’s Bus/Device
+<<usage 300 >>
+=====
+```python
+import heapq
+from typing import List
+
+
+def merge_k_sorted_lists(lists: List[List[int]]) -> List[int]:
+    """
+    Merge k sorted lists into a single sorted list using a min-heap.
+    
+    Args:
+        lists: A list of k sorted lists of integers.
+        
+    Returns:
+        A single sorted list containing all elements from the input lists.
+    """
+    if not lists:
+        return []
+    
+    # Filter out empty lists
+    non_empty_lists = [lst for lst in lists if lst]
+    if not non_empty_lists:
+        return []
+    
+    # Initialize the heap with the first element of each non-empty list
+    # Each entry in the heap is (value, list_index, element_index)
+    heap = []
+    for i, lst in enumerate(non_empty_lists):
+        heapq.heappush(heap, (lst[0], i, 0))
+    
+    result = []
+    
+    while heap:
+        # Pop the smallest element
+        val, list_idx, elem_idx = heapq.heappop(heap)
+        result.append(val)
+        
+        # If there are more elements in that list, push the next one
+        if elem_idx + 1 < len(non_empty_lists[list_idx]):
+            next_val = non_empty_lists[list_idx][elem_idx + 1]
+            heapq.heappush(heap,
+<<usage 300 >>
+=====
+The 1929 stock market crash was not caused by a single event, but rather by a convergence of structural, financial, and psychological factors that created a fragile economic environment. Below is a structured summary of the primary causes:
+
+### 1. **Speculative Bubble and Overvaluation**
+   - **Excessive Speculation**: During the 1920s, stock prices rose dramatically, far outpacing corporate earnings. Many investors bought stocks not based on company fundamentals but on the expectation that prices would continue to rise indefinitely.
+   - **Buying on Margin**: A significant portion of stock purchases was made using borrowed money (margin). Investors could buy $1,000 worth of stock with only $100 of their own capital. This amplified gains during the bull market but created massive debt obligations that became unsustainable when prices fell.
+   - **Irrational Exuberance**: A widespread belief in perpetual economic growth led to a "get rich quick" mentality, attracting inexperienced and unsophisticated investors.
+
+### 2. **Weak Regulatory Framework**
+   - **Lack of Oversight**: The U.S. government had minimal regulation of the stock market. There were no strict rules governing insider trading, market manipulation, or the extent to which brokers could lend money to clients.
+   - **Inadequate Banking Controls**: Banks were heavily involved in stock market speculation, using customer deposits to finance their own trading activities. This blurred the
+<<usage 300 >>
+=====

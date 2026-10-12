@@ -1,0 +1,43 @@
+### ar4-nodyn 04:44:07
+healthy after 480 s
+idle power: 27.0 24.0 24.0 25.0 
+ar4-nodyn      long-pp   pp= 3458tok ttft= 0.71s ( 4845.5 t/s) | tg= 300tok 139.13 t/s | wall=  2.9s
+ar4-nodyn      short-pp  pp=   55tok ttft= 0.05s ( 1172.8 t/s) | tg= 300tok 108.08 t/s | wall=  2.8s
+ar4-nodyn      code      pp=   53tok ttft= 0.05s ( 1168.6 t/s) | tg= 400tok 125.40 t/s | wall=  3.2s
+ar4-nodyn      long-pp   pp= 3458tok ttft= 0.37s ( 9444.5 t/s) | tg= 300tok 139.50 t/s | wall=  2.5s
+ar4-nodyn      short-pp  pp=   55tok ttft= 0.04s ( 1223.2 t/s) | tg= 300tok 107.73 t/s | wall=  2.8s
+ar4-nodyn      code      pp=   53tok ttft= 0.05s ( 1132.9 t/s) | tg= 400tok 125.40 t/s | wall=  3.2s
+power W (all samples, all cards):
+      2 26.0;      4 27.0;      1 29.0;      1 30.0;      1 55.0;      2 57.0;      1 61.0;      1 198.0;      1 204.0;      1 207.0;      2 208.0;      2 211.0;      1 212.0;      2 214.0;      1 218.0;      1 219.0;      1 221.0;      1 222.0;      3 223.0;      1 228.0;      1 229.0;      1 232.0;
+sclk:
+      1 sclk clock level: 1: (3244Mhz);      1 sclk clock level: 1: (3254Mhz);      1 sclk clock level: 1: (3262Mhz);      1 sclk clock level: 1: (3282Mhz);      1 sclk clock level: 1: (3294Mhz);      1 sclk clock level: 1: (3299Mhz);      1 sclk clock level: 1: (3301Mhz);      1 sclk clock level: 1: (3309Mhz);      1 sclk clock level: 1: (3317Mhz);      1 sclk clock level: 1: (3344Mhz);      1 sclk clock level: 1: (3347Mhz);      1 sclk clock level: 1: (3348Mhz);      1 sclk clock level: 1: (3356Mhz);      2 sclk clock level: 1: (3359Mhz);      1 sclk clock level: 1: (3363Mhz);      2 sclk clock level: 1: (3367Mhz);      1 sclk clock level: 1: (3368Mhz);      2 sclk clock level: 1: (3373Mhz);      1 sclk clock level: 1: (3386Mhz);      1 sclk clock level: 1: (3387Mhz);      1 sclk clock level: 1: (3389Mhz);      8 sclk clock level: S: (41Mhz);
+  pp2216: 5275.1 tok/s (best of 2)
+  pp8778: 5350.7 tok/s (best of 2)
+  pp17578: 5259.5 tok/s (best of 2)
+  pp70053: 4784.2 tok/s (best of 2)
+  pp140259: 4237.1 tok/s (best of 2)
+  conc 1: per-stream decode  115.5- 115.5 tok/s  aggregate   114.4 tok/s over the wall (400 tok in 3.5s)
+  conc 4: per-stream decode   88.1- 100.5 tok/s  aggregate   344.7 tok/s over the wall (1600 tok in 4.6s)
+  conc 8: per-stream decode   61.6-  73.9 tok/s  aggregate   483.9 tok/s over the wall (3200 tok in 6.6s)
+### rccl-nodyn 04:54:47
+healthy after 480 s
+idle power: 28.0 24.0 25.0 26.0 
+rccl-nodyn     long-pp   pp= 3458tok ttft= 0.69s ( 5028.5 t/s) | tg= 300tok 194.18 t/s | wall=  2.2s
+rccl-nodyn     short-pp  pp=   55tok ttft= 0.04s ( 1417.1 t/s) | tg= 300tok 127.92 t/s | wall=  2.4s
+rccl-nodyn     code      pp=   53tok ttft= 0.04s ( 1423.5 t/s) | tg= 400tok 156.78 t/s | wall=  2.6s
+rccl-nodyn     long-pp   pp= 3458tok ttft= 0.36s ( 9711.5 t/s) | tg= 300tok 194.08 t/s | wall=  1.9s
+rccl-nodyn     short-pp  pp=   55tok ttft= 0.04s ( 1353.7 t/s) | tg= 300tok 127.53 t/s | wall=  2.4s
+rccl-nodyn     code      pp=   53tok ttft= 0.04s ( 1397.5 t/s) | tg= 400tok 156.39 t/s | wall=  2.6s
+power W (all samples, all cards):
+      1 26.0;      5 27.0;      2 28.0;      4 30.0;      1 41.0;      1 42.0;      1 45.0;      1 99.0;      1 165.0;      1 197.0;      1 199.0;      1 201.0;      1 202.0;      1 203.0;      1 209.0;      2 210.0;      2 211.0;      1 212.0;      1 214.0;      1 216.0;      1 221.0;      1 227.0;
+sclk:
+      1 sclk clock level: 1: (1518Mhz);      1 sclk clock level: 1: (1529Mhz);      1 sclk clock level: 1: (1538Mhz);      1 sclk clock level: 1: (1539Mhz);      1 sclk clock level: 1: (3130Mhz);      1 sclk clock level: 1: (3148Mhz);      1 sclk clock level: 1: (3158Mhz);      1 sclk clock level: 1: (3168Mhz);      1 sclk clock level: 1: (3170Mhz);      1 sclk clock level: 1: (3171Mhz);      1 sclk clock level: 1: (3172Mhz);      1 sclk clock level: 1: (3193Mhz);      2 sclk clock level: 1: (3197Mhz);      1 sclk clock level: 1: (3204Mhz);      1 sclk clock level: 1: (3207Mhz);      1 sclk clock level: 1: (3208Mhz);      1 sclk clock level: 1: (3217Mhz);      2 sclk clock level: 1: (3219Mhz);     12 sclk clock level: S: (41Mhz);
+  pp2216: 5438.0 tok/s (best of 2)
+  pp8778: 5444.6 tok/s (best of 2)
+  pp17570: 5352.4 tok/s (best of 2)
+  pp70053: 4832.9 tok/s (best of 2)
+  pp140291: 4279.4 tok/s (best of 2)
+  conc 1: per-stream decode  141.5- 141.5 tok/s  aggregate   140.1 tok/s over the wall (400 tok in 2.9s)
+  conc 4: per-stream decode  102.6- 116.7 tok/s  aggregate   402.0 tok/s over the wall (1600 tok in 4.0s)
+  conc 8: per-stream decode   79.0-  93.6 tok/s  aggregate   628.9 tok/s over the wall (3200 tok in 5.1s)
+### done 05:05:19

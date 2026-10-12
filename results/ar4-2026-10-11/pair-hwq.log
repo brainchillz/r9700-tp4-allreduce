@@ -1,0 +1,41 @@
+### keeper stopped; GPU_MAX_HW_QUEUES=1 05:46:54
+### ar4-hwq1a 05:46:54
+healthy after 430 s
+GPU_MAX_HW_QUEUES=1
+ar4-hwq1a      long-pp   pp= 3458tok ttft= 0.68s ( 5070.6 t/s) | tg= 300tok 210.32 t/s | wall=  2.1s
+ar4-hwq1a      short-pp  pp=   55tok ttft= 0.04s ( 1397.8 t/s) | tg= 300tok 164.34 t/s | wall=  1.9s
+ar4-hwq1a      code      pp=   53tok ttft= 0.04s ( 1464.7 t/s) | tg= 400tok 191.03 t/s | wall=  2.1s
+ar4-hwq1a      long-pp   pp= 3458tok ttft= 0.35s ( 9873.5 t/s) | tg= 300tok 209.96 t/s | wall=  1.8s
+ar4-hwq1a      short-pp  pp=   55tok ttft= 0.04s ( 1534.1 t/s) | tg= 300tok 163.81 t/s | wall=  1.9s
+ar4-hwq1a      code      pp=   53tok ttft= 0.04s ( 1506.6 t/s) | tg= 400tok 190.82 t/s | wall=  2.1s
+  conc 1: per-stream decode  172.4- 172.4 tok/s  aggregate   170.5 tok/s over the wall (400 tok in 2.3s)
+  conc 4: per-stream decode  114.7- 129.4 tok/s  aggregate   448.4 tok/s over the wall (1600 tok in 3.6s)
+  conc 8: per-stream decode   81.6-  94.9 tok/s  aggregate   649.8 tok/s over the wall (3200 tok in 4.9s)
+05:54:06 steps=50 gpu_span=20.32 toks=8.00;05:54:07 steps=100 gpu_span=20.29 toks=8.00;05:54:08 steps=150 gpu_span=18.61 toks=8.00;05:54:09 steps=200 gpu_span=18.67 toks=8.00;05:54:09 steps=250 gpu_span=18.67 toks=8.00;05:54:11 steps=300 gpu_span=18.81 toks=8.00;05:54:12 steps=350 gpu_span=20.34 toks=8.00;05:54:13 steps=400 gpu_span=18.62 toks=8.00;
+### ar4-hwq1b 05:56:12
+healthy after 430 s
+GPU_MAX_HW_QUEUES=1
+ar4-hwq1b      long-pp   pp= 3458tok ttft= 0.68s ( 5079.5 t/s) | tg= 300tok 210.20 t/s | wall=  2.1s
+ar4-hwq1b      short-pp  pp=   55tok ttft= 0.04s ( 1453.8 t/s) | tg= 300tok 164.11 t/s | wall=  1.9s
+ar4-hwq1b      code      pp=   53tok ttft= 0.04s ( 1418.3 t/s) | tg= 400tok 190.78 t/s | wall=  2.1s
+ar4-hwq1b      long-pp   pp= 3458tok ttft= 0.35s ( 9790.0 t/s) | tg= 300tok 209.99 t/s | wall=  1.8s
+ar4-hwq1b      short-pp  pp=   55tok ttft= 0.04s ( 1484.8 t/s) | tg= 300tok 163.58 t/s | wall=  1.9s
+ar4-hwq1b      code      pp=   53tok ttft= 0.04s ( 1426.4 t/s) | tg= 400tok 190.62 t/s | wall=  2.1s
+  conc 1: per-stream decode  172.4- 172.4 tok/s  aggregate   170.4 tok/s over the wall (400 tok in 2.3s)
+  conc 4: per-stream decode  114.5- 129.1 tok/s  aggregate   447.9 tok/s over the wall (1600 tok in 3.6s)
+  conc 8: per-stream decode   81.0-  94.4 tok/s  aggregate   636.4 tok/s over the wall (3200 tok in 5.0s)
+06:03:24 steps=50 gpu_span=20.31 toks=8.00;06:03:25 steps=100 gpu_span=20.31 toks=8.00;06:03:26 steps=150 gpu_span=18.64 toks=8.00;06:03:27 steps=200 gpu_span=18.69 toks=8.00;06:03:28 steps=250 gpu_span=18.67 toks=8.00;06:03:29 steps=300 gpu_span=18.84 toks=8.00;06:03:30 steps=350 gpu_span=20.35 toks=8.00;06:03:31 steps=400 gpu_span=18.63 toks=8.00;
+### rccl-hwq1 06:05:30
+healthy after 430 s
+GPU_MAX_HW_QUEUES=1
+rccl-hwq1      long-pp   pp= 3458tok ttft= 0.68s ( 5077.4 t/s) | tg= 300tok 194.09 t/s | wall=  2.2s
+rccl-hwq1      short-pp  pp=   55tok ttft= 0.04s ( 1424.7 t/s) | tg= 300tok 127.97 t/s | wall=  2.4s
+rccl-hwq1      code      pp=   53tok ttft= 0.04s ( 1367.9 t/s) | tg= 400tok 156.88 t/s | wall=  2.6s
+rccl-hwq1      long-pp   pp= 3458tok ttft= 0.35s ( 9752.5 t/s) | tg= 300tok 194.08 t/s | wall=  1.9s
+rccl-hwq1      short-pp  pp=   55tok ttft= 0.04s ( 1446.1 t/s) | tg= 300tok 127.77 t/s | wall=  2.4s
+rccl-hwq1      code      pp=   53tok ttft= 0.04s ( 1378.6 t/s) | tg= 400tok 156.55 t/s | wall=  2.6s
+  conc 1: per-stream decode  140.8- 140.8 tok/s  aggregate   139.4 tok/s over the wall (400 tok in 2.9s)
+  conc 4: per-stream decode  102.4- 116.5 tok/s  aggregate   401.3 tok/s over the wall (1600 tok in 4.0s)
+  conc 8: per-stream decode   77.4- 107.9 tok/s  aggregate   607.6 tok/s over the wall (3200 tok in 5.3s)
+06:12:42 steps=50 gpu_span=24.16 toks=8.00;06:12:44 steps=100 gpu_span=22.28 toks=8.00;06:12:45 steps=150 gpu_span=22.32 toks=8.00;06:12:46 steps=200 gpu_span=22.38 toks=8.00;06:12:47 steps=250 gpu_span=22.31 toks=8.00;06:12:48 steps=300 gpu_span=22.46 toks=8.00;06:12:50 steps=350 gpu_span=24.08 toks=8.00;06:12:51 steps=400 gpu_span=22.29 toks=8.00;
+### done 06:14:52

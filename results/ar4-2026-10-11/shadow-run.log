@@ -1,0 +1,16 @@
+### shadow 04:29:40
+healthy after 460 s
+544 ~/bench/greedy-ar4-shadow.txt
+
+(Breaking it down: 123 × 40 = 4,920 and 123 × 5 = 615, so 4,920 + 615 = 5,535.) 154
+== shadow tally
+(Worker_TP0 pid=3300) [radiance] AR4 SHADOW n=37000 bad=0 rankdiff=0 this: bytes=81920 rel=4.149e-03 same_ranks=True | maxrel=1.163e-02 sizes={10240: 129, 20480: 129, 81920: 35784, 92160: 129, 163840: 22, 235520: 129, 307200: 129, 317440: 129, 327680: 129, 655360: 162, 737280: 129}
+(Worker_TP0 pid=3300) [radiance] AR4 SHADOW n=37500 bad=0 rankdiff=0 this: bytes=81920 rel=2.146e-03 same_ranks=True | maxrel=1.163e-02 sizes={10240: 129, 20480: 129, 81920: 36284, 92160: 129, 163840: 22, 235520: 129, 307200: 129, 317440: 129, 327680: 129, 655360: 162, 737280: 129}
+(Worker_TP0 pid=3300) [radiance] AR4 SHADOW n=38000 bad=0 rankdiff=0 this: bytes=81920 rel=5.181e-03 same_ranks=True | maxrel=1.163e-02 sizes={10240: 129, 20480: 129, 81920: 36784, 92160: 129, 163840: 22, 235520: 129, 307200: 129, 317440: 129, 327680: 129, 655360: 162, 737280: 129}
+(Worker_TP0 pid=3300) [radiance] AR4 SHADOW n=38500 bad=0 rankdiff=0 this: bytes=81920 rel=6.897e-03 same_ranks=True | maxrel=1.163e-02 sizes={10240: 129, 20480: 129, 81920: 37284, 92160: 129, 163840: 22, 235520: 129, 307200: 129, 317440: 129, 327680: 129, 655360: 162, 737280: 129}
+82
+Mean acceptance length: 3.80
+Per-position acceptance rate: 0.757, 0.631, 0.427, 0.311, 0.262, 0.223, 0.184, 
+Mean acceptance length: 3.91
+Per-position acceptance rate: 0.807, 0.523, 0.404, 0.358, 0.312, 0.257, 0.248, 
+### done 04:37:45

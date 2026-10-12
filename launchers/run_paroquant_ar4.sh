@@ -1,0 +1,419 @@
+#!/bin/bash
+# Serve z-lab/Qwen3.8-27B-PARO through the radiance ParoQuant W4A8 stack (gfx1201, TP2).
+#
+# Mirrors run_mxfp4_074_kvgroup.sh's env and patch list so numbers compare like-for-like against
+# the MXFP4 production server. Deliberate differences, and only these:
+#   - container vllmparo; cache ~/.radiance-cache-paro-093 (compile caches validate on model +
+#     torch/Triton version and MUST NOT be shared across checkpoints).
+#   - model -> the PARO snapshot; --served-model-name Qwen3.8-PARO, NOT the prod ids.
+#   - the paroquant quant method + kernels are built into site-packages at container start
+#     (config.json declares quant_method=paroquant; a sitecustomize import registers it in the
+#     engine and every TP worker).
+#   - no --kv-cache-memory pin yet: the PARO weight footprint differs from MXFP4's, so the tuned
+#     18563072000 could OOM. First boots run util 0.92; pin after measuring.
+#   - MXFP4-only env knobs are left at prod values but are INERT here (no quark layers load).
+#
+# MXFP4 checkpoint (quant_method paroquant_mxfp4, from paroquant/build_hybrid.py): same launcher,
+#   MODEL_DIR=Qwen3.8-27B-PARO-MXFP4-ft. The rotation streams (defaults on) apply: the loader's
+#   per-token producers (pqm_add_rms_rot / pqm_ew_rot) replace the int4 per-group ones through the
+#   same install_stream. MODE=eval then gates RADIANCE_PQM_CHECKALL per partition.
+#   The RADIANCE_MXFP4_* kernel knobs (fragment-order weights, NT decode loads, decode band) are
+#   passed at MXFP4 prod's values; they are inert for the int4 checkpoint (no quark layers load)
+#   and load-bearing for MXFP4-PARO's speed.
+#
+# MODE=eval  (default): --enforce-eager, CHECKALL numerics gate on the four model shapes,
+#                       no speculative decoding, 32K ctx. For correctness gating only.
+# MODE=prod           : full config -- DFlash2 FP8 drafter (SPEC tokens configurable), 262K ctx,
+#                       compiled graphs.
+#
+# Env knobs this script reads (the rest are passed through to the container unchanged):
+#   RUNTIME=podman|docker   container runtime; auto-detected, podman preferred
+#   MAXLEN= MAXSEQS=        --max-model-len / --max-num-seqs, in BOTH modes (defaults per mode)
+#   VLLM_NO_USAGE_STATS=1   vLLM usage telemetry, off by default here; 0 re-enables it. It
+#                           cannot work in this container anyway: the payload is built by
+#                           shelling out to cpuinfo, and the sitecustomize import below puts
+#                           a vLLM WARNING on that child stdout ahead of its JSON, which is
+#                           the JSONDecodeError users were seeing from _report_usage_worker.
+#
+# Port 8080 is prod's port and both need both GPUs: stop production first
+#   systemctl --user stop qwen_vllm_38        restore with: vllm-switch 38
+#
+# 2026-09-03 default sampling temperature 1.0 -> 0.7 (--override-generation-config), fleet-wide
+#   across every vllm-switch target. DEFAULT only -- a client-supplied temperature still wins.
+#   Rollback: sed -i 's/"temperature":0.7/"temperature":1.0/' run_paroquant.sh && systemctl --user restart qwen_vllm_paro
+#
+set -euo pipefail
+
+# Paths are derived, not hardcoded: this script is the one the systemd unit runs, so it has to
+# work from a clone anywhere. PATCHES defaults to the repo root (this file lives in paroquant/).
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+PATCHES_DIR="$(realpath -m "${PATCHES:-$SCRIPT_DIR/..}")"
+MODELS="$(realpath -m "${MODELS:-$HOME/models}")"
+HF_CACHE="$(realpath -m "${HF_CACHE:-$HOME/.cache/huggingface}")"
+
+# ---------------------------------------------------------------- container runtime
+# Same three differences serve-mxfp4.sh handles, and only these: `--replace` is podman-only,
+# `--group-add keep-groups` is podman-only (docker wants numeric render/video GIDs), and docker
+# needs the stale container removed by hand. Every other flag below is identical on both.
+RUNTIME=${RUNTIME:-}
+if [ -z "$RUNTIME" ]; then
+  if   command -v podman >/dev/null 2>&1; then RUNTIME=podman
+  elif command -v docker >/dev/null 2>&1; then RUNTIME=docker
+  else echo "no container runtime found: install podman (preferred) or docker" >&2; exit 1
+  fi
+fi
+command -v "$RUNTIME" >/dev/null 2>&1 || { echo "RUNTIME=$RUNTIME is not on PATH" >&2; exit 1; }
+
+RT_FLAGS=()
+GROUP_FLAGS=()
+if [ "$RUNTIME" = podman ]; then
+  RT_FLAGS+=(--replace)
+  GROUP_FLAGS+=(--group-add keep-groups)
+else
+  # keep-groups has no docker equivalent: pass the GIDs of the GPU device nodes by number. They
+  # only matter if --privileged is ever dropped, but a missing group is a permission denial from
+  # inside a TP worker, which is a much worse place to find it.
+  for g in render video; do
+    gid=$(getent group "$g" 2>/dev/null | cut -d: -f3) || true
+    if [ -n "$gid" ]; then GROUP_FLAGS+=(--group-add "$gid"); fi
+  done
+fi
+
+MODE=${MODE:-eval}
+PORT=${PORT:-8080}
+NAME=${NAME:-vllmparo}
+# The image was hardcoded at the podman run below, which made the documented
+# "IMAGE and CACHE move together" rule unenforceable here and an image A/B impossible:
+# CACHE was overridable, the image it is keyed to was not. Same default and same
+# spelling as serve-mxfp4.sh.
+IMAGE=${IMAGE:-stilldeadcode/vllm-radiance:0.9.3}
+# Space-separated served ids. Eval default answers ONLY to Qwen3.8-PARO so nothing pinned to the
+# prod ids routes here by accident; the qwen_vllm_paro systemd unit (vllm-switch paro) overrides
+# with the prod ids so clients like the Pi (model id Qwen3.6) work unchanged.
+SERVED_NAMES=${SERVED_NAMES:-Qwen3.8-PARO}
+SPEC=${SPEC:-5}      # dflash re-sweep 2026-08: 5 beats 7 by 8-13% aggregate on this stack
+DRAFTER=${DRAFTER:-Qwen3.8-27B-DFlash2-FP8}   # DFlash2 drafter dir under $MODELS
+PREFIX_CACHE=${PREFIX_CACHE:-1}                # 0 for a drafter-capture serve (cached prefixes yield no hidden states)
+CAPTURE_DIR=${CAPTURE_DIR:-}                   # host dir: record drafter training data (radiance_dflash_capture.py)
+PROFILE=${PROFILE:-0}                          # 1: arm the torch profiler (traces in $CACHE/prof; POST /start_profile, /stop_profile)
+# Async scheduling overlaps the engine's scheduling round trip with GPU execution. vLLM refuses it
+# together with disable_padded_drafter_batch, so the two are one switch (as in serve-mxfp4.sh). The
+# 2026-09-09 drafter profile on this stack showed a 3.1 ms GPU-idle bubble per step between the
+# drafter's last kernel and the next step's input prep in sync mode -- the case async exists for.
+ASYNC=${ASYNC:-0}
+if [ "$ASYNC" = 1 ]; then ASYNC_FLAG="--async-scheduling"; UNPAD=false; else ASYNC_FLAG="--no-async-scheduling"; UNPAD=true; fi
+CHUNK=${CHUNK:-8192} # prod prefill chunk (--max-num-batched-tokens); sweep knob
+# Context length and concurrency, overridable in BOTH modes. The defaults differ because the modes
+# do: prod is the shipped serving config, eval boots short so a CHECKALL gate fits on one card.
+# MAXLEN_EVAL is the old name for the eval default and still wins over it (ab_prefill_tp1.sh).
+# A TP=1 serve on one 32 GB card needs MAXLEN <= 65536.
+if [ "$MODE" = eval ]; then
+  MAXLEN=${MAXLEN:-${MAXLEN_EVAL:-32768}}; MAXSEQS=${MAXSEQS:-8}
+else
+  MAXLEN=${MAXLEN:-262144}; MAXSEQS=${MAXSEQS:-8}
+fi
+GPU_UTIL=${GPU_UTIL:-0.92}
+MAX_LOGPROBS=${MAX_LOGPROBS:-20}   # --max-logprobs (vLLM default 20); raise, e.g. 256, only to collect prompt_logprobs for a KL-divergence run
+# GDN decode step as ONE launch (conv -> grid barrier -> recurrent), the libr4d rx5 build that
+# also zeroes the cudagraph pad rows. The AutoRound int4 serve (same bf16-input linear contract)
+# has run it since 08-30; the merge hook it needs is installed with the merge itself left OFF
+# (in_proj_a/b are fp16 here, there is nothing to merge). Compile cache keyed on the flag.
+GDN_FUSED=${RADIANCE_GDN_FUSED_UPDATE:-1}
+# Pinned to the build the shipped PARO numbers were measured on. serve-mxfp4.sh now derives
+# b9e42ab-rx6 from r4d_radiance_extras.patch (rx6 adds the 3-rank all-reduce for TP=3); rx5 is not
+# reproducible from the current patch, so a fresh box has to use rx6 and re-gate GSM8K for this
+# stack. Override with R4D_KEY=.
+# The temporal (ssm) state cache dtype: float16 | bfloat16 | float32 | empty (= the model config's
+# mamba_ssm_dtype, which is float32 here).
+#
+# A 16-bit state halves the snapshot each candidate token writes, and that snapshot IS the cost of
+# the GDN decode kernels -- one [V,K] per candidate per head, because which candidate survives
+# verification is unknown until after the layer. Measured on the conv+recurrent pair (us/layer):
+#
+#             N=1 T=8    N=8 T=5 (conc-8)    N=8 T=8
+#   float32     31.6          61.0            169.8
+#   bfloat16    26.7          44.8             61.2
+#   float16     28.7          43.9             59.8
+#
+# The N=8 T=8 column is the cliff: at fp32 that is 100.7 MB of state against a 64 MB last level.
+#
+# PREFER float16: same two bytes as bfloat16, 10 mantissa bits to bf16's 7, at the same cost
+# (3 VALU per pair either way -- gfx1201 has no bf16 convert AND no packed round-to-nearest f16
+# convert). Measured against the fp32 reference: rms error 2.2e-4 vs bf16's 1.7e-3, and signed
+# bias -1.2e-5 vs -4.2e-5.
+#
+# The f16 store deliberately uses two v_cvt_f16_f32 (round-to-nearest) rather than the ONE-
+# instruction v_cvt_pkrtz, which rounds toward ZERO. That is not a free instruction: a biased
+# rounding does not decay out of a leaky integrator, it changes the effective decay from d to
+# d(1-b), and with pkrtz's measured -2.4e-4 per-step magnitude loss the longest-memory heads here
+# (decay 0.9973) settle ~8% deflated. RTNE measures -0.00%. See r4d_gdn_state.h.
+#
+# bfloat16 remains for anything needing fp32 exponent range; this state peaks at ~0.19.
+#
+# Needs a libr4d carrying the matching narrow-state kernels (rx7+); radiance_gdn declines to a slow
+# FLA fallback rather than faulting without one, so the default below follows the knob.
+GDN_SSM_DTYPE=${GDN_SSM_DTYPE:-}
+if [ -n "$GDN_SSM_DTYPE" ] && [ "$GDN_SSM_DTYPE" != float32 ]; then
+  R4D_KEY=${R4D_KEY:-b9e42ab-rx7}
+else
+  R4D_KEY=${R4D_KEY:-b9e42ab-rx5}
+fi
+R4D_CACHE=${R4D_CACHE:-$HOME/.cache/radiance-libr4d}
+# The image's own libr4d predates the gated-delta-net overflow fix and NaNs this model, and the
+# in-container copy is guarded by [ -f /r4d/r4d.so ] -- a missing build there is a silent fallback
+# to the NaN kernel, not an error. Check it on the host, where it can still be a message.
+[ -f "$R4D_CACHE/$R4D_KEY/r4d.so" ] || {
+  echo "libr4d $R4D_KEY not built at $R4D_CACHE/$R4D_KEY/r4d.so" >&2
+  echo "  serving without it falls back to the image's libr4d, which NaNs this model." >&2
+  echo "  Build the current one:  ./setup-paroquant.sh   (produces b9e42ab-rx6)" >&2
+  echo "  then either R4D_KEY=b9e42ab-rx6 $0 ... or re-gate and change the default here." >&2
+  exit 1
+}
+# Rotation stream: fused add+rmsnorm+rotate+quant producers for the norm-fed linears (decode
+# band); patches the decoder-layer forward, so the compile cache is keyed (-rs).
+ROT_STREAM=${RADIANCE_PQ_ROT_STREAM:-1}
+# Stream 2: silu-mul -> down, GDN gated norm -> out_proj, attention gate -> o_proj producers
+# fused with rotate+quant (default off until the serve gate lands; also patches the graph).
+ROT_STREAM2=${RADIANCE_PQ_ROT_STREAM2:-1}
+# Stream 3: the two-rank all-reduce fused into the norm+rotate producers (default off until gated).
+ROT_STREAM3=${RADIANCE_PQ_ROT_STREAM3:-0}
+# MODEL_DIR names a directory under $MODELS. Overridable so the same launcher (same patches,
+# same patched libr4d, same template) can serve a pseudo-quantized checkpoint for an accuracy
+# gate -- keeping every variable but the weights fixed.
+MODEL_DIR=${MODEL_DIR:-Qwen3.8-27B-PARO}
+MODEL=/models/$MODEL_DIR
+[ -d "$MODELS/$MODEL_DIR" ] || { echo "model missing at $MODELS/$MODEL_DIR; run setup-paroquant.sh" >&2; exit 1; }
+
+# Bit width decides the activation-quant defaults. int5 checkpoints serve at their measured best
+# with int8 per-group activations and the zero-point epilogue (same-stack KL 0.0100 / top-1 95.2%
+# vs 0.0126 without), so reading the width off the checkpoint means MODEL_DIR is the only thing a
+# user has to set. An explicit RADIANCE_PQ_* in the environment still wins. This has to happen
+# BEFORE the cache suffix below, which is keyed on exactly these flags -- a mismatch here serves
+# the wrong compiled graph out of a stale cache dir.
+PQ_BITS=$(python3 -c '
+import json, sys
+try:
+    print((json.load(open(sys.argv[1])).get("quantization_config") or {}).get("bits", 4))
+except Exception:
+    print(4)
+' "$MODELS/$MODEL_DIR/config.json" 2>/dev/null || echo 4)
+if [ "$PQ_BITS" = 5 ]; then
+  RADIANCE_PQ_I8=${RADIANCE_PQ_I8:-1}
+  RADIANCE_PQ_PG=${RADIANCE_PQ_PG:-1}
+  RADIANCE_PQ_ZPE=${RADIANCE_PQ_ZPE:-1}
+  export RADIANCE_PQ_I8 RADIANCE_PQ_PG RADIANCE_PQ_ZPE
+  echo "[paro] int5 checkpoint -> W5A8 defaults I8=$RADIANCE_PQ_I8 PG=$RADIANCE_PQ_PG ZPE=$RADIANCE_PQ_ZPE (set them explicitly to override)"
+fi
+
+CACHE_SUF=""; [ "$GDN_FUSED" = 1 ] && CACHE_SUF="-fu"; [ "$ROT_STREAM" = 1 ] && CACHE_SUF="$CACHE_SUF-rs"
+[ "$ROT_STREAM2" = 1 ] && CACHE_SUF="${CACHE_SUF}-rs2"
+[ "$ROT_STREAM3" = 1 ] && CACHE_SUF="${CACHE_SUF}-rs3"
+[ "${RADIANCE_SKINNY_GEMM:-1}" = all ] && CACHE_SUF="${CACHE_SUF}-sk"   # skinny in_proj_ba routing changes the compiled graph
+[ "${RADIANCE_PQ_I8:-0}" = 1 ] && CACHE_SUF="${CACHE_SUF}-i8"
+[ "${RADIANCE_PQ_PG:-0}" = 1 ] && CACHE_SUF="${CACHE_SUF}-pg"
+[ "${RADIANCE_PQ_ZPE:-0}" = 1 ] && CACHE_SUF="${CACHE_SUF}-zpe"
+# The ssm state width changes the mamba cache spec, so the warm/compile cache must not be
+# shared with a serve of the other width.
+[ -n "$GDN_SSM_DTYPE" ] && CACHE_SUF="${CACHE_SUF}-ssm${GDN_SSM_DTYPE}"
+CACHE=${CACHE:-$HOME/.radiance-cache-paro-093$CACHE_SUF}
+mkdir -p "$CACHE"
+
+
+# Chat template. The default is the file every number in RESULTS.md was measured with: the GSM8K
+# band (97-98%) is template-bound, and the model's own bundled template scores 95-96% with runaway
+# answers, so this is a measurement-affecting knob, not a cosmetic one. Point CHAT_TEMPLATE at any
+# .jinja to override. It is mounted by path, so it must exist on the HOST, not just in the image.
+CHAT_TEMPLATE=${CHAT_TEMPLATE:-$HF_CACHE/qwen-fixed-v22.3.jinja}
+CHAT_TEMPLATE="$(realpath -m "$CHAT_TEMPLATE")"
+[ -r "$CHAT_TEMPLATE" ] || {
+  echo "chat template not readable: $CHAT_TEMPLATE" >&2
+  echo "  set CHAT_TEMPLATE=<path to a .jinja on the host>, or leave it unset for the default" >&2
+  echo "  ($HF_CACHE/qwen-fixed-v22.3.jinja -- what the measured GSM8K band needs)." >&2
+  exit 1
+}
+# Reuse an existing bind mount when the template already lives under one, so the common case adds
+# no mount; anything else is bound read-only at a fixed path.
+CT_MOUNT=()
+case "$CHAT_TEMPLATE" in
+  "$HF_CACHE"/*)    CT_PATH="/root/.cache/huggingface/${CHAT_TEMPLATE#"$HF_CACHE"/}" ;;
+  "$MODELS"/*)      CT_PATH="/models/${CHAT_TEMPLATE#"$MODELS"/}" ;;
+  "$SCRIPT_DIR"/*)  CT_PATH="/paro/${CHAT_TEMPLATE#"$SCRIPT_DIR"/}" ;;
+  "$PATCHES_DIR"/*) CT_PATH="/patches/${CHAT_TEMPLATE#"$PATCHES_DIR"/}" ;;
+  *) CT_PATH=/chat-template.jinja; CT_MOUNT=(-v "$CHAT_TEMPLATE:$CT_PATH:ro,z") ;;
+esac
+echo "[paro] chat-template=$CHAT_TEMPLATE -> $CT_PATH"
+# TP and the card set are overridable so a single-card CHECKALL boot can run beside another job.
+TP=${TP:-2}
+GPUS=${GPUS:-0,1}
+# ROCR_VISIBLE_DEVICES selects the physical cards; HIP_VISIBLE_DEVICES then indexes INTO that
+# filtered list. Passing the same list to both works for "0,1" only by coincidence and breaks a
+# single-card run (GPUS=1 -> HIP asks for index 1 of a one-element list -> "No CUDA GPUs").
+HIP_IDX=$(seq -s, 0 $(( $(tr -cd , <<<"$GPUS" | wc -c) )))
+# Optional cgroup memory cap for the container (e.g. MEM_LIMIT=14g). Lets a gate boot run beside
+# a job that owns most of the host's RAM: the server OOMs itself instead of starving the job.
+MEM_LIMIT=${MEM_LIMIT:-}
+MEM_ARGS=(); [ -n "$MEM_LIMIT" ] && MEM_ARGS=(--memory "$MEM_LIMIT")
+CAPTURE_MOUNT=(); if [ -n "$CAPTURE_DIR" ]; then mkdir -p "$CAPTURE_DIR"; CAPTURE_MOUNT=(-v "$CAPTURE_DIR:/capture:z"); fi
+
+if [ "$MODE" = eval ]; then
+  EXTRA_ARGS=(--enforce-eager --max-model-len "$MAXLEN" --max-num-seqs "$MAXSEQS" --max-logprobs "$MAX_LOGPROBS"
+              --max-num-batched-tokens 8192)
+  # Per-rank quantized shapes: qkv, o, gate_up, down, in_proj(+merge), out_proj
+  CHECKALL=${CHECKALL:-"7168:5120,5120:3072,17408:5120,5120:8704,8192:5120,5120:3072"}
+  SPEC_ARGS=()
+else
+  PROF_ARGS=(); [ "$PROFILE" = 1 ] && PROF_ARGS=(--profiler-config.profiler=torch --profiler-config.torch_profiler_dir=/cache/prof --profiler-config.torch_profiler_with_stack=false); [ "$PROFILE" = 1 ] && mkdir -p "$CACHE/prof"
+  EXTRA_ARGS=("${PROF_ARGS[@]}" --max-model-len "$MAXLEN" --max-num-seqs "$MAXSEQS" --max-logprobs "$MAX_LOGPROBS" --max-num-batched-tokens "$CHUNK"
+              $([ "$PREFIX_CACHE" = 1 ] && echo --enable-prefix-caching || echo --no-enable-prefix-caching)
+              ${GDN_SSM_DTYPE:+--mamba-ssm-cache-dtype $GDN_SSM_DTYPE}
+              --compilation-config
+              '{"pass_config":{"fuse_norm_quant":true,"fuse_act_quant":true},"compile_sizes":[1,2,4,8],"inductor_compile_config":{"enable_auto_functionalized_v2":false,"size_asserts":false,"alignment_asserts":false,"scalar_asserts":false,"combo_kernels":true,"benchmark_combo_kernel":true,"triton.cooperative_reductions":true}}')
+  CHECKALL=${CHECKALL:-}
+  SPEC_ARGS=(--speculative-config
+    "{\"method\":\"dflash\",\"model\":\"/models/${DRAFTER}\",\"num_speculative_tokens\":${SPEC},\"attention_backend\":\"TRITON_ATTN\",\"disable_padded_drafter_batch\":${UNPAD},\"draft_sample_method\":\"greedy\"}")
+fi
+
+# podman --replace does this itself; docker refuses the name while a stale container holds it.
+if [ "$RUNTIME" != podman ]; then "$RUNTIME" rm -f "$NAME" >/dev/null 2>&1 || true; fi
+
+exec "$RUNTIME" run "${RT_FLAGS[@]}" --name "$NAME" --privileged --ipc=host --network=host "${MEM_ARGS[@]}" \
+  --device /dev/kfd --device /dev/dri "${GROUP_FLAGS[@]}" \
+  --security-opt seccomp=unconfined --cap-add SYS_PTRACE \
+  -e ROCR_VISIBLE_DEVICES="$GPUS" -e HIP_VISIBLE_DEVICES="$HIP_IDX" \
+  -e HF_HUB_OFFLINE=1 \
+  -e VLLM_NO_USAGE_STATS="${VLLM_NO_USAGE_STATS:-1}" \
+  -e VLLM_ROCM_USE_AITER=1 -e VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1 \
+  -e VLLM_ROCM_USE_AITER_MHA=0 -e VLLM_ROCM_USE_AITER_MLA=0 -e VLLM_ROCM_USE_AITER_MOE=0 \
+  -e VLLM_ROCM_USE_AITER_LINEAR=0 -e VLLM_ROCM_USE_AITER_FP8BMM=0 \
+  -e VLLM_ROCM_USE_AITER_FP4BMM=0 -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+  -e NCCL_PROTO=Simple -e GPU_MAX_HW_QUEUES="${GPU_MAX_HW_QUEUES:-1}" \
+  -e RADIANCE_USE_R4D=1 -e RADIANCE_USE_R4D_AR="${RADIANCE_USE_R4D_AR:-1}" -e RADIANCE_USE_R4D_AR_QUANT=1 -e RADIANCE_AR4_MAX_KB="${RADIANCE_AR4_MAX_KB:-768}" -e RADIANCE_AR4_MIN_KB="${RADIANCE_AR4_MIN_KB:-0}" -e RADIANCE_AR4_SHADOW="${RADIANCE_AR4_SHADOW:-0}" -e RADIANCE_AR4_NB="${RADIANCE_AR4_NB:-8}" -e RADIANCE_DYNAMIC_DRAFT="${RADIANCE_DYNAMIC_DRAFT:-1}" -e RADIANCE_AR4_SKIP_FILES="${RADIANCE_AR4_SKIP_FILES:-}" \
+  -e RADIANCE_R4D_REPORT=1 -e RADIANCE_AR_MAX_KB=86016 \
+  -e RADIANCE_STEP_TRACE="${RADIANCE_STEP_TRACE:-0}" -e VLLM_TORCH_PROFILER_DIR="${VLLM_TORCH_PROFILER_DIR:-}" \
+  -e RADIANCE_DFLASH_CAPTURE_DIR="${CAPTURE_DIR:+/capture}" "${CAPTURE_MOUNT[@]}" \
+  -e RADIANCE_PRESHUFFLE=1 -e RADIANCE_FUSE_RMS_QUANT=1 \
+  -e R4D_ATTN_FP8="${R4D_ATTN_FP8:-3}" \
+  -e RADIANCE_GDN_FUSED_UPDATE="$GDN_FUSED" -e RADIANCE_GDN_MERGE_INPROJ=0 \
+  -e RADIANCE_GDN_FUSED_MAX_ITEMS="${RADIANCE_GDN_FUSED_MAX_ITEMS:-32}" \
+  -e RADIANCE_DYNAMIC_WIDTH=1 -e RADIANCE_DYNW_ALPHA=0.35 -e RADIANCE_DYNW_MARGIN=2 \
+  -e RADIANCE_DYNW_MIN=2 -e RADIANCE_DYNW_MIN_BATCH=3 \
+  -e RADIANCE_AR_QNB=96 -e RADIANCE_AR_QNT=1024 -e RADIANCE_AR_OVERLAP=0 \
+  -e RADIANCE_DFLASH_SELECTOR_TOPK= \
+  -e RADIANCE_PAROQUANT=1 \
+  -e RADIANCE_MXFP4_W4A8="${RADIANCE_MXFP4_W4A8:-1}" -e RADIANCE_MXFP4_WPERM="${RADIANCE_MXFP4_WPERM:-1}" \
+  -e RADIANCE_MXFP4_DECODE_NT="${RADIANCE_MXFP4_DECODE_NT:-1}" -e RADIANCE_MXFP4_DECODE_MAX_M="${RADIANCE_MXFP4_DECODE_MAX_M:-64}" \
+  -e RADIANCE_MXFP4_EPIFAST="${RADIANCE_MXFP4_EPIFAST:-1}" -e RADIANCE_MXFP4_TN4_MIN_M="${RADIANCE_MXFP4_TN4_MIN_M:-2048}" \
+  -e RADIANCE_MXFP4_A_TILED_MIN_M="${RADIANCE_MXFP4_A_TILED_MIN_M:-513}" \
+  -e RADIANCE_PQ_CHECKALL="$CHECKALL" \
+  -e RADIANCE_PQM_CHECKALL="${RADIANCE_PQM_CHECKALL:-$CHECKALL}" \
+  -e RADIANCE_PQM_CHECK_MAX_M="${RADIANCE_PQM_CHECK_MAX_M:-128}" \
+  -e RADIANCE_PQ_CHECK_MAX_M=${PQ_CHECK_MAX_M:-128} \
+  -e RADIANCE_PQ_DECODE_MAX_M=${PQ_DECODE_MAX_M:-64} \
+  -e RADIANCE_PQ_WPERM="${RADIANCE_PQ_WPERM:-1}" -e RADIANCE_PQ_DECODE_NT="${RADIANCE_PQ_DECODE_NT:-1}" \
+  -e RADIANCE_PQ_ATILED="${RADIANCE_PQ_ATILED:-1}" -e RADIANCE_PQ_AT_LBK="${RADIANCE_PQ_AT_LBK:-128}" \
+  -e RADIANCE_PQ_AT_HOIST="${RADIANCE_PQ_AT_HOIST:-1}" -e RADIANCE_PQ_PTOK="${RADIANCE_PQ_PTOK:-1}" \
+  -e RADIANCE_PQ_FUSED_TOKQ="${RADIANCE_PQ_FUSED_TOKQ:-1}" \
+  -e RADIANCE_PQ_I8="${RADIANCE_PQ_I8:-0}" \
+  -e RADIANCE_PQ_PG="${RADIANCE_PQ_PG:-0}" \
+  -e RADIANCE_PQ_ZPE="${RADIANCE_PQ_ZPE:-0}" \
+  -e RADIANCE_PQ_PG_PRODUCER="${RADIANCE_PQ_PG_PRODUCER:-3}" \
+  -e RADIANCE_PQ_ROT_STREAM="$ROT_STREAM" -e RADIANCE_PQ_ROT_STREAM2="$ROT_STREAM2" \
+  -e RADIANCE_PQ_ROT_STREAM3="$ROT_STREAM3" -e RADIANCE_PQ_AR_CHECK="${RADIANCE_PQ_AR_CHECK:-0}" \
+  -e RADIANCE_PQ_AR_FALLBACK="${RADIANCE_PQ_AR_FALLBACK:-0}" \
+  -e RADIANCE_PQ_ROT_V2="${RADIANCE_PQ_ROT_V2:-1}" \
+  -e RADIANCE_PQ_HIPCC_FLAGS="${RADIANCE_PQ_HIPCC_FLAGS:-}" \
+  -e RADIANCE_FAST_DRAFT=1 -e RADIANCE_DRAFT_TAU=0.20 -e RADIANCE_DRAFT_RERANK=80 \
+  -e RADIANCE_VERIFY_HEAD=1 -e RADIANCE_VERIFY_HEAD_MAX_M=32 \
+  -e RADIANCE_TOPK_TRITON_MIN_ROWS=1 -e RADIANCE_SKINNY_GEMM="${RADIANCE_SKINNY_GEMM:-1}" \
+  -e RADIANCE_GDN_PATHS=both \
+  -e RADIANCE_KV_GROUP_OPT=1 \
+  -e VLLM_CACHE_ROOT=/cache/vllm -e TORCHINDUCTOR_CACHE_DIR=/cache/inductor \
+  -e TRITON_CACHE_DIR=/cache/triton -e AITER_ROOT_DIR=/cache/aiter \
+  -e TRITON_CACHE_AUTOTUNING=1 \
+  -v "$HF_CACHE":/root/.cache/huggingface \
+  -v "$MODELS":/models \
+  -v "$CACHE":/cache \
+  -v "$PATCHES_DIR":/patches:z \
+  -v "$SCRIPT_DIR":/paro:z \
+  -v "$R4D_CACHE/$R4D_KEY":/r4d:z \
+  "${CT_MOUNT[@]}" \
+  -e R4D_SO="$R4D_CACHE/$R4D_KEY" \
+  --entrypoint bash "$IMAGE" -lc '
+    set -e
+    SP=/opt/vllm/lib/python3.12/site-packages
+    cd /patches
+    python3 patch_quark_mxfp4.py
+    python3 patch_ar_maxbytes.py
+    python3 patch_topk_triton_rows.py
+    python3 patch_dflash_calib.py
+    python3 patch_dflash_mxfp4_kv.py
+    python3 patch_rmsquant_fusion.py
+    python3 patch_verify_head.py
+    python3 patch_kv_group_size.py
+    python3 patch_topk_composite.py
+    python3 patch_gdn_shared_build.py
+    python3 patch_async_dynwidth.py     # dynamic verify width under async (AsyncScheduler bypasses update_draft_token_ids)
+    python3 patch_step_trace.py         # RADIANCE_STEP_TRACE=N per-step CPU/GPU trace
+    python3 patch_skinny_gemm.py        # small bf16 projections -> radiance_gemm (RADIANCE_SKINNY_GEMM=all adds in_proj_ba)
+    python3 patch_dflash_selector_topk.py
+    python3 patch_dynwidth.py
+    python3 patch_ar_geometry.py
+    python3 patch_ar_4rank.py         # 3-/4-rank one-shot all-reduce (needs an r4d.so with ar_oneshot_4rank_exact)
+    python3 patch_gdn_merge_inproj.py
+    python3 patch_qwen3_thinkoff.py \
+      || echo "[radiance] WARNING: thinkoff patch did not apply"
+    cp radiance_preamble.py /opt/radiance_preamble.py      # banner/preamble from the repo, not the baked copy
+    cp mxfp4-configs/*.json "$SP"/aiter/ops/triton/configs/gemm/
+    cp radiance_mxfp4.py radiance_gemm.py radiance_gdn.py radiance_gdnmerge.py radiance_rmsquant.py \
+       radiance_drafthead.py radiance_verifyhead.py radiance_aroverlap.py radiance_topk.py \
+       radiance_arnq.py "$SP"/
+    hipcc -O3 -w -std=c++17 -fPIC -shared --offload-arch=gfx1201 $(python3 -m pybind11 --includes) \
+      radiance_mxfp4_fp8.hip -o "$SP"/radiance_mxfp4_fp8.so
+    if [ -n "${R4D_SO:-}" ] && [ -f /r4d/r4d.so ]; then
+      cp /r4d/r4d.so "$SP"/r4d.so
+      echo "[radiance] using patched r4d.so from $R4D_SO"
+    fi
+    # ---- paroquant: build the kernel module and register the quant method in every process ----
+    cd /paro
+    # RADIANCE_PQ_HIPCC_FLAGS: extra compile flags for A/B builds of the kernel module only
+    # (e.g. -DPQ_HW_CVT=0 to fall back to the software e4m3 encoder). Empty in prod.
+    hipcc -O3 -w -std=c++17 -fPIC -shared --offload-arch=gfx1201 $(python3 -m pybind11 --includes) \
+      ${RADIANCE_PQ_HIPCC_FLAGS:-} radiance_paroquant.hip -o "$SP"/radiance_paroquant_kernel.so
+    cp radiance_paroquant.py radiance_paroquant_mxfp4.py "$SP"/
+    cp /patches/radiance_dflash_capture.py "$SP"/ 2>/dev/null || cp ../radiance_dflash_capture.py "$SP"/
+    # NB: appended to the STDLIB sitecustomize, not written to site-packages -- Ubuntu ships
+    # /usr/lib/python3.12/sitecustomize.py and it shadows any site-packages one, so a file
+    # dropped there is silently never imported.
+    # Guarded: podman run --replace starts from the pristine image, but podman start on an
+    # EXISTING container re-runs this whole script in the same writable layer, and an unguarded
+    # >> then appends another copy of the block on every restart.
+    if ! grep -q radiance_paroquant /usr/lib/python3.12/sitecustomize.py; then
+      printf "%s\n" \
+        "try:" \
+        "    import radiance_paroquant  # registers the paroquant quantization config" \
+        "    import radiance_paroquant_mxfp4  # and the MXFP4-weights variant (paroquant_mxfp4)" \
+        "    import radiance_dflash_capture  # drafter training-data capture (inert unless RADIANCE_DFLASH_CAPTURE_DIR)" \
+        "except Exception as e:" \
+        "    import sys" \
+        "    sys.stderr.write(\"[radiance.paroquant] registration failed: %r\\n\" % (e,))" \
+        >> /usr/lib/python3.12/sitecustomize.py
+    fi
+    # Leave the bind mounts before exec: a stale .so in the working dir precedes site-packages
+    # on sys.path (see run_mxfp4_074 for the 17-hours-stale-kernel incident).
+    cd /
+    exec /opt/radiance_entrypoint.sh "$@"' \
+  _ \
+  "$MODEL" \
+  --served-model-name $SERVED_NAMES \
+  --host 0.0.0.0 --port "$PORT" \
+  --kv-cache-dtype "${KV_DTYPE:-fp8}" \
+  --tensor-parallel-size "$TP" \
+  --gpu-memory-utilization "$GPU_UTIL" \
+  --attention-backend R4D \
+  $ASYNC_FLAG \
+  --mamba-cache-mode align \
+  --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 \
+  --override-generation-config '{"temperature":0.7,"top_p":0.95,"top_k":20}' \
+  --chat-template "$CT_PATH" \
+  "${SPEC_ARGS[@]}" \
+  "${EXTRA_ARGS[@]}" ${EXTRA_VLLM_ARGS:-}

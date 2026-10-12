@@ -1,0 +1,14 @@
+gpu annotations: 63  generation steps: 62  kernels: 70772
+first->last step wall: 1867.7 ms over 62 steps = 30.12 ms/step incl. gaps
+CPU launches total: graph 190  kernel 7406
+
+per step (median over 62 steps), ms:
+  step dur  25.95  busy  15.55  idle  10.40   kernels/step 1056  graph launches/step 1
+  all_reduce     2.54   (n=129)
+  target_gemm    9.65
+  gdn            1.07
+  attn           0.26
+  drafter        0.00   (n=0)
+  norm_rot       1.07
+  sampler        0.00
+  other          0.97
